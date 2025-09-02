@@ -23,7 +23,7 @@
   .day .dnum { font-size:12px; color:var(--muted); }
   .coin { font-size:22px; text-align:right; }
   .ghost { opacity:.35 }
-  /* responsive 3–4 card grid */
+  /* responsive summary grid (fits 3–4 cards) */
   .summary { display:grid; gap:8px; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); margin-top:8px; }
   .pill { background:#12162a; border:1px solid #2a3052; border-radius:999px; padding:10px 12px; display:flex; align-items:center; justify-content:center; gap:8px; }
   .stat { font-size:13px; color:var(--muted); }
@@ -116,7 +116,10 @@
       <div class="kicker">Weights normalize to 1. Set a daily <b>Target minutes</b> for timers.</div>
       <div class="row muted" style="gap:16px;margin:6px 0 4px 0;"><span style="width:100%;font-size:12px">Columns: Name | ID | Weight (0–1) | Target minutes</span></div>
       <div id="cfgTasks"></div>
-      <button id="addTaskBtn">+ Add Task</button>
+      <div class="row">
+        <button id="addTaskBtn">+ Add Task</button>
+        <button id="resetTasksBtn" title="Restore default tasks">Reset Tasks</button>
+      </div>
       <div class="sep"></div>
       <div class="row">
         <label>Bronze max %</label><input id="thBronze" type="number" min="0" max="100" value="59" />
@@ -127,7 +130,7 @@
     </details>
   </section>
 
-  <!-- Right: Month + summary (now 4 cards with Form) -->
+  <!-- Right: Month + summary (with Form) -->
   <section class="card">
     <div class="row" style="justify-content:space-between">
       <div class="row">
@@ -142,6 +145,7 @@
       </div>
     </div>
 
+    <!-- Calendar grid -->
     <div class="grid" id="calGrid"></div>
 
     <div class="sep"></div>
@@ -216,16 +220,21 @@ let audioCtx = null;
 let soundEnabled = false;
 let audioPrimed = false;
 function initAudio(){ if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-function primeAudioOnce(){ if (audioPrimed) return; audioPrimed=true; try{ initAudio(); audioCtx.resume(); const o=audioCtx.createOscillator(), g=audioCtx.createGain(); g.gain.value=0.0001; o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+0.05);}catch(e){} }
-['pointerdown','keydown','touchstart'].forEach(ev=> window.addEventListener(ev, primeAudioOnce, { once:true, capture:true }));
+function primeAudioOnce(){
+  if (audioPrimed) return; audioPrimed = true;
+  try { initAudio(); audioCtx.resume(); const o=audioCtx.createOscillator(), g=audioCtx.createGain();
+        g.gain.value=0.0001; o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+0.05); } catch(e){}
+}
+['pointerdown','keydown','touchstart'].forEach(ev=> window.addEventListener(ev, primeAudioOnce, {once:true,capture:true}));
+
 function playChime(){
   if (!soundEnabled) return;
-  try{ initAudio(); audioCtx.resume(); }catch(e){}
+  try { initAudio(); audioCtx.resume(); } catch(e){}
   const ctx=audioCtx, now=ctx.currentTime;
   [880,1175,1760].forEach((f,i)=>{
     const o=ctx.createOscillator(), g=ctx.createGain();
     o.type='sine'; o.frequency.value=f; o.connect(g); g.connect(ctx.destination);
-    const t=now+i*0.15;
+    const t=now + i*0.15;
     g.gain.setValueAtTime(0.0001,t);
     g.gain.linearRampToValueAtTime(0.2,t+0.02);
     g.gain.exponentialRampToValueAtTime(0.0001,t+0.25);
@@ -234,17 +243,36 @@ function playChime(){
   if (navigator.vibrate) navigator.vibrate(250);
 }
 
-/* ======== LOAD/SAVE ======== */
-function loadCfg(){ const c=localStorage.getItem(SKCFG); if (c){ const obj=JSON.parse(c); obj.tasks=(obj.tasks||[]).map(t=>({target:60,...t})); return obj; } const seeded={tasks:DEFAULT_TASKS, thresholds:DEFAULT_THRESHOLDS}; localStorage.setItem(SKCFG,JSON.stringify(seeded)); return seeded; }
+/* ================== LOAD/SAVE (robust) ================== */
+function loadCfg(){
+  const raw = localStorage.getItem(SKCFG);
+  if (raw){
+    try{
+      const obj = JSON.parse(raw) || {};
+      let tasks = Array.isArray(obj.tasks) && obj.tasks.length ? obj.tasks : DEFAULT_TASKS;
+      tasks = tasks.map(t => ({ target:60, ...t }));
+      const thresholds = { ...DEFAULT_THRESHOLDS, ...(obj.thresholds||{}) };
+      const sanitized = { tasks, thresholds };
+      localStorage.setItem(SKCFG, JSON.stringify(sanitized)); // persist fix
+      return sanitized;
+    }catch(e){}
+  }
+  const seeded = { tasks: DEFAULT_TASKS, thresholds: DEFAULT_THRESHOLDS };
+  localStorage.setItem(SKCFG, JSON.stringify(seeded));
+  return seeded;
+}
 function saveCfg(){ localStorage.setItem(SKCFG, JSON.stringify(cfg)); }
-function loadStore(){ const s=localStorage.getItem(SKEY); if (s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKEY,JSON.stringify(seeded)); return seeded; }
+
+function loadStore(){ const s = localStorage.getItem(SKEY); if (s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKEY,JSON.stringify(seeded)); return seeded; }
 function saveStore(){ localStorage.setItem(SKEY, JSON.stringify(store)); }
-function loadTimers(){ const s=localStorage.getItem(SKTMR); if (s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKTMR, JSON.stringify(seeded)); return seeded; }
+
+function loadTimers(){ const s = localStorage.getItem(SKTMR); if (s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKTMR, JSON.stringify(seeded)); return seeded; }
 function saveTimers(){ localStorage.setItem(SKTMR, JSON.stringify(tstore)); }
-function loadForm(){ const s=localStorage.getItem(SKFORM); if (s) return JSON.parse(s); const seeded={stage:0, evaluatedThrough:null}; localStorage.setItem(SKFORM, JSON.stringify(seeded)); return seeded; }
+
+function loadForm(){ const s = localStorage.getItem(SKFORM); if (s) return JSON.parse(s); const seeded={stage:0, evaluatedThrough:null}; localStorage.setItem(SKFORM, JSON.stringify(seeded)); return seeded; }
 function saveForm(){ localStorage.setItem(SKFORM, JSON.stringify(form)); }
 
-/* ======== HELPERS ======== */
+/* ================== HELPERS ================== */
 const $ = (q) => document.querySelector(q);
 const fmt2 = (n) => (Math.round(n*100)/100).toFixed(2);
 function ymd(d){ return d.toISOString().slice(0,10); }
@@ -256,26 +284,28 @@ function normalizeWeights(tasks){ const sum=tasks.reduce((a,t)=>a+(+t.weight||0)
 function coinForEff(eff){ const {BRONZE_MAX,SILVER_MAX,GOLD_MIN}=cfg.thresholds; if (eff>=GOLD_MIN) return "gold"; if (eff<=BRONZE_MAX) return "bronze"; return "silver"; }
 function weightedEfficiency(taskPercents){ const tasks=normalizeWeights(cfg.tasks); let acc=0; for (const t of tasks){ const p=clamp(+taskPercents[t.id]||0,0,100); acc += (p/100)*t.weight*100; } return clamp(acc,0,100); }
 
-/* ======== SOUND UI ======== */
+/* ================== SOUND UI ================== */
 const soundToggle=$("#soundToggle"), testSoundBtn=$("#testSoundBtn");
 soundEnabled = localStorage.getItem('dailyCoins.sound')==='1';
 if (soundToggle) soundToggle.checked = soundEnabled;
 soundToggle?.addEventListener('change', ()=>{ soundEnabled=soundToggle.checked; localStorage.setItem('dailyCoins.sound',soundEnabled?'1':'0'); if (soundEnabled){ primeAudioOnce(); playChime(); }});
 testSoundBtn?.addEventListener('click', ()=>{ soundEnabled=true; localStorage.setItem('dailyCoins.sound','1'); if (soundToggle) soundToggle.checked=true; primeAudioOnce(); playChime(); });
 
-/* ======== DOM REFS ======== */
+/* ================== DOM REFS ================== */
 const datePick=$("#datePick"), monthPick=$("#monthPick"), taskList=$("#taskList");
 const effOut=$("#effOut"), coinOut=$("#coinOut"), note=$("#note");
 const saveBtn=$("#saveBtn"), delBtn=$("#deleteBtn"), clearInputsBtn=$("#clearInputsBtn"), stopAllBtn=$("#stopAllBtn"), silenceAllBtn=$("#silenceAllBtn");
 const calGrid=$("#calGrid"), monthTitle=$("#monthTitle"), prevMonthBtn=$("#prevMonth"), nextMonthBtn=$("#nextMonth");
 const cBronze=$("#cBronze"), cSilver=$("#cSilver"), cGold=$("#cGold"), avgPts=$("#avgPts"), streakEl=$("#streak"), monthCoin=$("#monthCoin"), monthExplain=$("#monthExplain");
 const exportBtn=$("#exportBtn"), importFile=$("#importFile");
-const thBronze=$("#thBronze"), thSilver=$("#thSilver"), thGold=$("#thGold"), cfgTasks=$("#cfgTasks"), addTaskBtn=$("#addTaskBtn"), saveCfgBtn=$("#saveCfgBtn");
+const thBronze=$("#thBronze"), thSilver=$("#thSilver"), thGold=$("#thGold"), cfgTasks=$("#cfgTasks"), addTaskBtn=$("#addTaskBtn"), saveCfgBtn=$("#saveCfgBtn"), resetTasksBtn=$("#resetTasksBtn");
 const formStageBig=$("#formStageBig"), formTrack=$("#formTrack"), formExplain=$("#formExplain"), formUpdateBtn=$("#formUpdateBtn"), formResetBtn=$("#formResetBtn");
 
-/* ======== INIT ======== */
+/* ================== INIT ================== */
 (function init(){
-  const today=new Date(); datePick.value=ymd(today); monthPick.value=ym(today);
+  const today=new Date();
+  if (!datePick.value)  datePick.value  = ymd(today);
+  if (!monthPick.value) monthPick.value = ym(today);
   renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); renderFormCard(); ensureTick();
 })();
 
@@ -391,6 +421,12 @@ function evaluateForm(upToYM){
 /* ================== DAY FORM ================== */
 function renderTasksForDay(){
   taskList.innerHTML="";
+  if (!cfg.tasks.length){
+    taskList.innerHTML = `<div class="muted" style="padding:8px 0">
+      No tasks configured. Open <b>⚙️ Configure</b> or click <b>Reset Tasks</b>.
+    </div>`;
+    return;
+  }
   const dayKey=datePick.value;
   const day=store.days[dayKey]||{tasks:{},mins:{}};
   note.value=day.note||"";
@@ -546,6 +582,18 @@ clearInputsBtn.addEventListener("click", ()=>{
 stopAllBtn.addEventListener("click", ()=>{ primeAudioOnce(); stopAll(datePick.value); });
 silenceAllBtn.addEventListener("click", ()=>{ primeAudioOnce(); silenceAll(datePick.value); });
 
+addTaskBtn.addEventListener("click", ()=>{ const newid="task"+Math.random().toString(36).slice(2,7); cfg.tasks.push({id:newid,name:"New Task",weight:0.1,target:30}); renderCfg(); });
+resetTasksBtn.addEventListener("click", ()=>{
+  if (!confirm('Restore the default tasks?')) return;
+  cfg.tasks = JSON.parse(JSON.stringify(DEFAULT_TASKS));
+  saveCfg(); renderCfg(); renderTasksForDay();
+});
+saveCfgBtn.addEventListener("click", ()=>{
+  const b=+thBronze.value, s=+thSilver.value, g=+thGold.value;
+  cfg.thresholds={ BRONZE_MAX:clamp(b,0,98), SILVER_MAX:clamp(s,Math.max(b+1,1),99), GOLD_MIN:clamp(g,Math.max(s+1,2),100) };
+  cfg.tasks=normalizeWeights(cfg.tasks); saveCfg(); renderTasksForDay(); rerunAuto(); renderCalendar();
+});
+
 formUpdateBtn.addEventListener("click", ()=> evaluateForm(monthPick.value));
 formResetBtn.addEventListener("click", ()=>{ if (!confirm("Reset form back to 👶 Toddler?")) return; form={stage:0,evaluatedThrough:null}; saveForm(); renderFormCard(); });
 
@@ -553,6 +601,29 @@ prevMonthBtn.addEventListener("click", ()=>{ const {Y,M}=monthMeta(monthPick.val
 nextMonthBtn.addEventListener("click", ()=>{ const {Y,M}=monthMeta(monthPick.value); const next=new Date(Y,M,1); monthPick.value=ym(next); renderCalendar(); });
 monthPick.addEventListener("input", renderCalendar);
 datePick.addEventListener("input", ()=>{ silenceAllAcrossDays(); renderTasksForDay(); rerunAuto(); resetTick(); checkAlarms(datePick.value); });
+
+/* ================== CONFIG UI RENDER ================== */
+function renderCfg(){
+  thBronze.value=cfg.thresholds.BRONZE_MAX; thSilver.value=cfg.thresholds.SILVER_MAX; thGold.value=cfg.thresholds.GOLD_MIN;
+  cfgTasks.innerHTML="";
+  for (const t of cfg.tasks){
+    const row=document.createElement("div"); row.className="taskcfgrow";
+    row.innerHTML=`<input type="text" value="${t.name}" data-id="${t.id}" data-k="name" />
+      <input type="text" value="${t.id}" data-id="${t.id}" data-k="id" />
+      <input type="number" step="0.05" value="${+t.weight||0}" data-id="${t.id}" data-k="weight" />
+      <input type="number" step="5" value="${+t.target||0}" data-id="${t.id}" data-k="target" />`;
+    cfgTasks.appendChild(row);
+  }
+  cfgTasks.querySelectorAll("input").forEach(inp=>{
+    inp.addEventListener("input",(e)=>{
+      const id=e.target.dataset.id, k=e.target.dataset.k, v=e.target.value;
+      const idx=cfg.tasks.findIndex(x=>x.id===id); if (idx<0) return;
+      if (k==="weight") cfg.tasks[idx][k]=+v;
+      else if (k==="target") cfg.tasks[idx][k]=Math.max(0,+v|0);
+      else cfg.tasks[idx][k]=v;
+    });
+  });
+}
 
 /* ================== IMPORT / EXPORT ================== */
 exportBtn.addEventListener("click", ()=>{
@@ -566,10 +637,17 @@ document.querySelector("label input#importFile").addEventListener("change",(e)=>
   const f=e.target.files?.[0]; if(!f) return;
   const r=new FileReader(); r.onload=()=>{ try{
     const data=JSON.parse(r.result);
-    if (data.cfg)   cfg={ thresholds:DEFAULT_THRESHOLDS, tasks:DEFAULT_TASKS, ...data.cfg, tasks:(data.cfg.tasks||DEFAULT_TASKS).map(t=>({target:60,...t})) };
-    if (data.store) store=data.store;
+    if (data.cfg)
+      cfg = {
+        thresholds: DEFAULT_THRESHOLDS,
+        tasks: DEFAULT_TASKS,
+        ...data.cfg,
+        tasks: (data.cfg.tasks && data.cfg.tasks.length ? data.cfg.tasks : DEFAULT_TASKS)
+                 .map(t => ({ target:60, ...t }))
+      };
+    if (data.store)  store=data.store;
     if (data.timers) tstore=data.timers;
-    if (data.form)  form=data.form;
+    if (data.form)   form=data.form;
     saveCfg(); saveStore(); saveTimers(); saveForm();
     renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); updateTimerUI(); renderFormCard(); checkAlarms(datePick.value);
     alert("Imported successfully.");
