@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Daily Coins – Bronze / Silver / Gold</title>
 <style>
-  :root { --bg:#0f1220; --card:#181c2f; --ink:#eef1ff; --muted:#9aa3c7; --accent:#6ca8ff; --ok:#7bd88f; --warn:#ffd166; --bad:#ff7575; }
+  :root { --bg:#0f1220; --card:#181c2f; --ink:#eef1ff; --muted:#9aa3c7; --accent:#6ca8ff; }
   * { box-sizing:border-box; }
   body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial; background:var(--bg); color:var(--ink); }
   header, footer { padding:12px 16px; display:flex; gap:10px; align-items:center; justify-content:space-between; }
@@ -28,6 +28,7 @@
   .stat { font-size:13px; color:var(--muted); }
   .big { font-size:28px; font-weight:700; }
   .muted { color:var(--muted); }
+  /* Day-task row: label | minutes | percent */
   .taskrow { display:grid; grid-template-columns:1fr 90px 90px; gap:8px; align-items:center; margin-bottom:6px; }
   .taskrow span { font-size:13px; }
   .sep { height:1px; background:#2a3052; margin:10px 0; opacity:.6 }
@@ -38,6 +39,8 @@
   .center { text-align:center; }
   .right { text-align:right; }
   .hidden { display:none; }
+  /* Config task row: name | id | weight | target minutes */
+  .taskcfgrow { display:grid; grid-template-columns:1fr 140px 90px 120px; gap:8px; align-items:center; margin-bottom:6px; }
 </style>
 </head>
 <body>
@@ -68,11 +71,12 @@
 
     <div class="sep"></div>
 
-    <div class="row" style="justify-content:space-between">
-      <div>
-        <label>Tasks for today</label>
-        <div id="taskList"></div>
-        <div class="kicker">Enter completion % per task. Weighted average → coin.</div>
+    <div>
+      <label>Tasks for today</label>
+      <div id="taskList"></div>
+      <div class="kicker">
+        Enter <b>minutes</b> (auto-converts to %) or enter % directly. We compare to each task’s <b>target minutes</b>.
+        Hitting 100% of targets → high efficiency → 🥇 by thresholds.
       </div>
     </div>
 
@@ -101,7 +105,10 @@
 
     <details>
       <summary>⚙️ Configure (tasks, weights, thresholds)</summary>
-      <div class="kicker">Weights should sum ≈ 1.0 (we’ll normalize if not).</div>
+      <div class="kicker">Weights should sum ≈ 1.0 (we normalize if not). Set a daily <b>target minutes</b> for each task.</div>
+      <div class="row muted" style="gap:16px;margin:6px 0 4px 0;">
+        <span style="width:100%;font-size:12px">Columns: Name | ID | Weight (0–1) | Target minutes</span>
+      </div>
       <div id="cfgTasks"></div>
       <button id="addTaskBtn">+ Add Task</button>
       <div class="sep"></div>
@@ -153,27 +160,27 @@
 </div>
 
 <footer class="muted">
-  <div>Tips: tap a day in the calendar to edit; export regularly for backup.</div>
+  <div>Tip: tap a day in the calendar to edit; export regularly for backup.</div>
   <div class="right">Made for 🥉/🥈/🥇 habit tracking</div>
 </footer>
 
 <script>
 /* ================== CONFIG ================== */
+// Now each task has a daily time target in minutes.
 const DEFAULT_TASKS = [
-  { id: "study",   name: "Study / Deep Work", weight: 0.4 },
-  { id: "workout", name: "Workout",           weight: 0.2 },
-  { id: "sleep",   name: "Sleep quality",     weight: 0.2 },
-  { id: "admin",   name: "Admin / Chores",    weight: 0.2 },
+  { id: "study",    name: "Study / Deep Work", weight: 0.4, target: 120 },
+  { id: "practice", name: "Math Practice",     weight: 0.2, target: 60  },
+  { id: "reinforce",name: "Day Reinforcing",   weight: 0.2, target: 45  },
+  { id: "recall",   name: "Night Recall",      weight: 0.2, target: 20  },
 ];
-// Thresholds can be changed in the UI; they are inclusive on ranges:
-// Bronze: 0..BRONZE_MAX, Silver: (BRONZE_MAX+1)..SILVER_MAX, Gold: GOLD_MIN..100
+// Thresholds remain global and apply to the final (weighted) efficiency %
 const DEFAULT_THRESHOLDS = { BRONZE_MAX: 59, SILVER_MAX: 84, GOLD_MIN: 85 };
 
-const PTS = { bronze:1, silver:2, gold:3 };
+const PTS   = { bronze:1, silver:2, gold:3 };
 const EMOJI = { bronze:"🥉", silver:"🥈", gold:"🥇" };
 
 /* ================== STATE & STORAGE ================== */
-const SKEY = "dailyCoins.v1";
+const SKEY  = "dailyCoins.v1";
 const SKCFG = "dailyCoinsCfg.v1"; // tasks + thresholds
 
 let cfg = loadCfg();
@@ -181,7 +188,12 @@ let store = loadStore();
 
 function loadCfg(){
   const c = localStorage.getItem(SKCFG);
-  if (c) return JSON.parse(c);
+  if (c) {
+    const obj = JSON.parse(c);
+    // Back-compat: seed 'target' if missing
+    obj.tasks = obj.tasks.map(t => ({ target: 60, ...t }));
+    return obj;
+  }
   const seeded = { tasks: DEFAULT_TASKS, thresholds: DEFAULT_THRESHOLDS };
   localStorage.setItem(SKCFG, JSON.stringify(seeded));
   return seeded;
@@ -191,7 +203,7 @@ function saveCfg(){ localStorage.setItem(SKCFG, JSON.stringify(cfg)); }
 function loadStore(){
   const s = localStorage.getItem(SKEY);
   if (s) return JSON.parse(s);
-  const seeded = { days: {} }; // key: YYYY-MM-DD -> { eff, coin, note, tasks: {id:percent} }
+  const seeded = { days: {} }; // key: YYYY-MM-DD -> { eff, coin, note, tasks:{id:percent}, mins:{id:minutes} }
   localStorage.setItem(SKEY, JSON.stringify(seeded));
   return seeded;
 }
@@ -227,31 +239,31 @@ function weightedEfficiency(taskPercents){ // object: id -> 0..100
 }
 
 /* ================== UI BINDINGS ================== */
-const datePick = $("#datePick");
-const monthPick = $("#monthPick");
-const taskList = $("#taskList");
-const effOut = $("#effOut");
-const coinOut = $("#coinOut");
-const note = $("#note");
-const saveBtn = $("#saveBtn");
-const delBtn = $("#deleteBtn");
-const calGrid = $("#calGrid");
+const datePick   = $("#datePick");
+const monthPick  = $("#monthPick");
+const taskList   = $("#taskList");
+const effOut     = $("#effOut");
+const coinOut    = $("#coinOut");
+const note       = $("#note");
+const saveBtn    = $("#saveBtn");
+const delBtn     = $("#deleteBtn");
+const calGrid    = $("#calGrid");
 const monthTitle = $("#monthTitle");
 const prevMonthBtn = $("#prevMonth");
 const nextMonthBtn = $("#nextMonth");
-const cBronze = $("#cBronze");
-const cSilver = $("#cSilver");
-const cGold = $("#cGold");
-const avgPts = $("#avgPts");
-const streakEl = $("#streak");
-const monthCoin = $("#monthCoin");
+const cBronze    = $("#cBronze");
+const cSilver    = $("#cSilver");
+const cGold      = $("#cGold");
+const avgPts     = $("#avgPts");
+const streakEl   = $("#streak");
+const monthCoin  = $("#monthCoin");
 const monthExplain = $("#monthExplain");
-const exportBtn = $("#exportBtn");
+const exportBtn  = $("#exportBtn");
 const importFile = $("#importFile");
 
 const thBronze = $("#thBronze");
 const thSilver = $("#thSilver");
-const thGold = $("#thGold");
+const thGold   = $("#thGold");
 const cfgTasks = $("#cfgTasks");
 const addTaskBtn = $("#addTaskBtn");
 const saveCfgBtn = $("#saveCfgBtn");
@@ -271,51 +283,76 @@ const saveCfgBtn = $("#saveCfgBtn");
 function renderTasksForDay(){
   taskList.innerHTML = "";
   const dayKey = datePick.value;
-  const day = store.days[dayKey] || { tasks:{}, note:"" };
+  const day = store.days[dayKey] || { tasks:{}, mins:{} };
   note.value = day.note || "";
 
   for (const t of cfg.tasks){
+    const percVal = day.tasks?.[t.id] ?? "";
+    const minsVal = day.mins?.[t.id] ?? "";
     const row = document.createElement("div");
     row.className = "taskrow";
     row.innerHTML = `
-      <span>${t.name} <span class="muted">(${fmt2(t.weight*100)}%)</span></span>
-      <input type="number" min="0" max="100" value="${day.tasks?.[t.id] ?? ""}" data-task="${t.id}" placeholder="%" />
-      <div class="muted right">%</div>
+      <span>${t.name} <span class="muted">(${fmt2(t.weight*100)}%) • target ${t.target||0}m</span></span>
+      <input type="number" min="0" value="${minsVal}" data-task="${t.id}" data-kind="mins" placeholder="min" />
+      <input type="number" min="0" max="100" value="${percVal}" data-task="${t.id}" data-kind="perc" placeholder="%" />
     `;
     taskList.appendChild(row);
   }
 
   // listeners
-  taskList.querySelectorAll("input[type=number]").forEach(inp=>{
-    inp.addEventListener("input", rerunAuto);
+  taskList.querySelectorAll("input").forEach(inp=>{
+    inp.addEventListener("input", (e)=>onTaskInput(e.target));
   });
-  note.addEventListener("input", ()=>{}); // noop
 }
 
-function gatherTaskPercents(){
-  const obj = {};
-  taskList.querySelectorAll("input[type=number]").forEach(inp=>{
-    const id = inp.dataset.task;
-    obj[id] = +inp.value || 0;
+function onTaskInput(el){
+  const id   = el.dataset.task;
+  const kind = el.dataset.kind;
+  const row  = el.closest(".taskrow");
+  const minsInp = row.querySelector('input[data-kind="mins"]');
+  const percInp = row.querySelector('input[data-kind="perc"]');
+  const t = cfg.tasks.find(x=>x.id===id) || { target:0 };
+  const target = +t.target || 0;
+
+  if (kind === "mins"){
+    const mins = +minsInp.value || 0;
+    const perc = target ? clamp((mins/target)*100, 0, 100) : 0;
+    percInp.value = Math.round(perc);
+  } else {
+    const perc = clamp(+percInp.value || 0, 0, 100);
+    const mins = target ? Math.round((perc/100)*target) : 0;
+    minsInp.value = mins || "";
+  }
+  rerunAuto();
+}
+
+function gatherTaskData(){
+  const perc = {};
+  const mins = {};
+  taskList.querySelectorAll(".taskrow").forEach(row=>{
+    const id    = row.querySelector('input[data-kind="perc"]').dataset.task;
+    const pVal  = +row.querySelector('input[data-kind="perc"]').value || 0;
+    const mVal  = +row.querySelector('input[data-kind="mins"]').value || 0;
+    perc[id] = pVal;
+    if (mVal>0) mins[id] = mVal;
   });
-  return obj;
+  return { perc, mins };
 }
 
 function rerunAuto(){
-  const perc = gatherTaskPercents();
+  const { perc } = gatherTaskData();
   const eff = weightedEfficiency(perc);
   effOut.textContent = fmt2(eff) + "%";
-  const coin = coinForEff(eff);
-  coinOut.textContent = isNaN(eff) ? "–" : EMOJI[coin];
+  coinOut.textContent = isNaN(eff) ? "–" : EMOJI[coinForEff(eff)];
 }
 
 saveBtn.addEventListener("click", ()=>{
   const key = datePick.value;
   if (!key) return;
-  const perc = gatherTaskPercents();
+  const { perc, mins } = gatherTaskData();
   const eff = weightedEfficiency(perc);
   const coin = coinForEff(eff);
-  store.days[key] = { eff, coin, note: note.value, tasks: perc };
+  store.days[key] = { eff, coin, note: note.value, tasks: perc, mins: mins };
   saveStore();
   renderCalendar();
 });
@@ -333,7 +370,7 @@ delBtn.addEventListener("click", ()=>{
 function monthMeta(ymStr){
   const [Y,M] = ymStr.split("-").map(Number);
   const first = new Date(Y, M-1, 1);
-  const startW = first.getDay(); // 0 Sun .. 6 Sat (we'll show Sun-first)
+  const startW = first.getDay(); // 0 Sun .. 6 Sat
   const days = new Date(Y, M, 0).getDate();
   return { Y, M, first, startW, days };
 }
@@ -344,8 +381,7 @@ function renderCalendar(){
   monthTitle.textContent = new Date(Y, M-1).toLocaleString(undefined, { month:"long", year:"numeric" });
 
   calGrid.innerHTML = "";
-  const blanks = startW; // Sunday-first
-  for (let i=0;i<blanks;i++){
+  for (let i=0;i<startW;i++){
     const d = document.createElement("div");
     d.className = "day ghost";
     calGrid.appendChild(d);
@@ -368,7 +404,7 @@ function renderCalendar(){
     calGrid.appendChild(el);
   }
 
-  // counts
+  // counts and stats
   let b=0,s=0,g=0, ptsSum=0, n=0;
   let bestStreak = 0, cur = 0;
   for (let d=1; d<=days; d++){
@@ -380,19 +416,17 @@ function renderCalendar(){
     if (info.coin==="gold")   g++;
     ptsSum += PTS[info.coin]; n++;
 
-    // streak: days with Silver or Gold
     if (info.coin==="silver" || info.coin==="gold") { cur++; bestStreak = Math.max(bestStreak, cur); }
     else cur = 0;
   }
-  cBronze.textContent = b;
-  cSilver.textContent = s;
-  cGold.textContent = g;
+  $("#cBronze").textContent = b;
+  $("#cSilver").textContent = s;
+  $("#cGold").textContent   = g;
 
   const avg = n ? (ptsSum/n) : 0;
   avgPts.textContent = fmt2(avg);
   streakEl.textContent = bestStreak;
 
-  // month decision
   let monthResult = null, explain = "";
   const maxCount = Math.max(b,s,g);
   const winners = [];
@@ -403,7 +437,6 @@ function renderCalendar(){
     monthResult = winners[0];
     explain = "Dominant coin by count.";
   } else {
-    // tiebreak by average points
     if (avg >= 2.5) monthResult = "gold";
     else if (avg >= 1.75) monthResult = "silver";
     else monthResult = "bronze";
@@ -426,9 +459,7 @@ nextMonthBtn.addEventListener("click", ()=>{
   renderCalendar();
 });
 monthPick.addEventListener("input", renderCalendar);
-datePick.addEventListener("input", ()=>{
-  renderTasksForDay(); rerunAuto();
-});
+datePick.addEventListener("input", ()=>{ renderTasksForDay(); rerunAuto(); });
 
 /* ================== CONFIG UI ================== */
 function renderCfg(){
@@ -439,11 +470,12 @@ function renderCfg(){
   cfgTasks.innerHTML = "";
   for (const t of cfg.tasks){
     const row = document.createElement("div");
-    row.className = "taskrow";
+    row.className = "taskcfgrow";
     row.innerHTML = `
-      <input type="text" value="${t.name}" data-id="${t.id}" data-k="name" />
-      <input type="text" value="${t.id}" data-id="${t.id}" data-k="id" />
-      <input type="number" step="0.05" value="${t.weight}" data-id="${t.id}" data-k="weight" />
+      <input type="text" value="${t.name}" data-id="${t.id}" data-k="name" placeholder="name"/>
+      <input type="text" value="${t.id}" data-id="${t.id}" data-k="id" placeholder="id"/>
+      <input type="number" step="0.05" value="${t.weight}" data-id="${t.id}" data-k="weight" placeholder="weight (0-1)"/>
+      <input type="number" step="5" value="${t.target||60}" data-id="${t.id}" data-k="target" placeholder="target min"/>
     `;
     cfgTasks.appendChild(row);
   }
@@ -456,6 +488,7 @@ function renderCfg(){
       const idx = cfg.tasks.findIndex(x=>x.id===id);
       if (idx>=0){
         if (k==="weight") cfg.tasks[idx][k] = +v;
+        else if (k==="target") cfg.tasks[idx][k] = Math.max(0, +v|0);
         else cfg.tasks[idx][k] = v;
       }
     });
@@ -463,21 +496,18 @@ function renderCfg(){
 }
 addTaskBtn.addEventListener("click", ()=>{
   const newid = "task"+Math.random().toString(36).slice(2,7);
-  cfg.tasks.push({ id:newid, name:"New Task", weight:0.1 });
+  cfg.tasks.push({ id:newid, name:"New Task", weight:0.1, target:60 });
   renderCfg();
 });
 saveCfgBtn.addEventListener("click", ()=>{
   const b = +thBronze.value, s = +thSilver.value, g = +thGold.value;
-  // basic guard & sort
   cfg.thresholds = {
     BRONZE_MAX: clamp(b,0,98),
     SILVER_MAX: clamp(s, Math.max(b+1,1), 99),
     GOLD_MIN:   clamp(g, Math.max(s+1,2), 100)
   };
-  // normalize weights
   cfg.tasks = normalizeWeights(cfg.tasks);
   saveCfg();
-  // refresh day list (weights changed)
   renderTasksForDay();
   rerunAuto();
   renderCalendar();
@@ -498,7 +528,10 @@ document.querySelector("label input#importFile").addEventListener("change", (e)=
   r.onload = () => {
     try {
       const data = JSON.parse(r.result);
-      if (data.cfg) cfg = data.cfg;
+      if (data.cfg) cfg = {
+        thresholds: DEFAULT_THRESHOLDS, tasks: DEFAULT_TASKS, ...data.cfg,
+        tasks: (data.cfg.tasks || DEFAULT_TASKS).map(t=>({ target:60, ...t }))
+      };
       if (data.store) store = data.store;
       saveCfg(); saveStore();
       renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar();
