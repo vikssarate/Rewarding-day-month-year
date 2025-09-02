@@ -23,7 +23,7 @@
   .day .dnum { font-size:12px; color:var(--muted); }
   .coin { font-size:22px; text-align:right; }
   .ghost { opacity:.35 }
-  /* responsive summary grid (fits 3–4 cards) */
+  /* responsive summary grid */
   .summary { display:grid; gap:8px; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); margin-top:8px; }
   .pill { background:#12162a; border:1px solid #2a3052; border-radius:999px; padding:10px 12px; display:flex; align-items:center; justify-content:center; gap:8px; }
   .stat { font-size:13px; color:var(--muted); }
@@ -130,7 +130,7 @@
     </details>
   </section>
 
-  <!-- Right: Month + summary (with Form) -->
+  <!-- Right: Month + summary (with Form + Year) -->
   <section class="card">
     <div class="row" style="justify-content:space-between">
       <div class="row">
@@ -163,6 +163,13 @@
         <div class="stat">Overall Month</div>
         <div class="big" id="monthCoin">–</div>
         <div class="muted" id="monthExplain"></div>
+      </div>
+
+      <!-- NEW: Overall Year -->
+      <div class="card center">
+        <div class="stat">Overall Year (<span id="yearTitle"></span>)</div>
+        <div class="big" id="yearCoin">–</div>
+        <div class="muted" id="yearExplain"></div>
       </div>
 
       <!-- Form card -->
@@ -226,7 +233,6 @@ function primeAudioOnce(){
         g.gain.value=0.0001; o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+0.05); } catch(e){}
 }
 ['pointerdown','keydown','touchstart'].forEach(ev=> window.addEventListener(ev, primeAudioOnce, {once:true,capture:true}));
-
 function playChime(){
   if (!soundEnabled) return;
   try { initAudio(); audioCtx.resume(); } catch(e){}
@@ -253,7 +259,7 @@ function loadCfg(){
       tasks = tasks.map(t => ({ target:60, ...t }));
       const thresholds = { ...DEFAULT_THRESHOLDS, ...(obj.thresholds||{}) };
       const sanitized = { tasks, thresholds };
-      localStorage.setItem(SKCFG, JSON.stringify(sanitized)); // persist fix
+      localStorage.setItem(SKCFG, JSON.stringify(sanitized));
       return sanitized;
     }catch(e){}
   }
@@ -300,13 +306,14 @@ const cBronze=$("#cBronze"), cSilver=$("#cSilver"), cGold=$("#cGold"), avgPts=$(
 const exportBtn=$("#exportBtn"), importFile=$("#importFile");
 const thBronze=$("#thBronze"), thSilver=$("#thSilver"), thGold=$("#thGold"), cfgTasks=$("#cfgTasks"), addTaskBtn=$("#addTaskBtn"), saveCfgBtn=$("#saveCfgBtn"), resetTasksBtn=$("#resetTasksBtn");
 const formStageBig=$("#formStageBig"), formTrack=$("#formTrack"), formExplain=$("#formExplain"), formUpdateBtn=$("#formUpdateBtn"), formResetBtn=$("#formResetBtn");
+const yearTitle=$("#yearTitle"), yearCoin=$("#yearCoin"), yearExplain=$("#yearExplain");
 
 /* ================== INIT ================== */
 (function init(){
   const today=new Date();
   if (!datePick.value)  datePick.value  = ymd(today);
   if (!monthPick.value) monthPick.value = ym(today);
-  renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); renderFormCard(); ensureTick();
+  renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); renderFormCard(); renderYearCard(); ensureTick();
 })();
 
 /* ================== TIMERS + ALARMS ================== */
@@ -418,6 +425,59 @@ function evaluateForm(upToYM){
   if (changes.length) formExplain.textContent += `  Updates: ${changes.join(" · ")}`;
 }
 
+/* ================== MONTH + YEAR SUMMARY ================== */
+function computeMonthSummary(ymStr){
+  let b=0,s=0,g=0, pts=0, n=0;
+  for (const key in store.days){
+    if (key.startsWith(ymStr+"-")){
+      const coin = store.days[key].coin;
+      if (coin==="bronze") { b++; pts+=1; n++; }
+      if (coin==="silver") { s++; pts+=2; n++; }
+      if (coin==="gold")   { g++; pts+=3; n++; }
+    }
+  }
+  const avg = n ? (pts/n) : 0;
+  if (!n) return {b,s,g,nDays:0,avg,coin:null,explain:"No data this month."};
+
+  const maxCount=Math.max(b,s,g);
+  const winners=[]; if (b===maxCount) winners.push("bronze"); if (s===maxCount) winners.push("silver"); if (g===maxCount) winners.push("gold");
+  let coin, explain;
+  if (winners.length===1){ coin=winners[0]; explain="Dominant coin by count."; }
+  else { coin = avg>=2.5 ? "gold" : avg>=1.75 ? "silver" : "bronze"; explain="Tie → resolved by average points."; }
+  return {b,s,g,nDays:n,avg,coin,explain};
+}
+
+function computeYearSummary(yearStr){
+  // month coin counts (based on monthly performance) + daily-weighted average points
+  const monthCounts = { bronze:0, silver:0, gold:0 };
+  let totalDays=0, totalPts=0;
+
+  for (let m=1; m<=12; m++){
+    const ymStr = `${yearStr}-${pad2(m)}`;
+    const ms = computeMonthSummary(ymStr);
+    if (ms.nDays>0){ monthCounts[ms.coin]++; totalDays += ms.nDays; totalPts += ms.avg * ms.nDays; }
+  }
+
+  if (totalDays===0) return { coin:null, explain:"No data this year." };
+
+  const maxCount = Math.max(monthCounts.bronze, monthCounts.silver, monthCounts.gold);
+  const winners=[]; if (monthCounts.bronze===maxCount) winners.push("bronze"); if (monthCounts.silver===maxCount) winners.push("silver"); if (monthCounts.gold===maxCount) winners.push("gold");
+
+  const avgYear = totalPts / totalDays;
+  let coin, explain;
+  if (winners.length===1){ coin=winners[0]; explain="Dominant monthly coin by count."; }
+  else { coin = avgYear>=2.5 ? "gold" : avgYear>=1.75 ? "silver" : "bronze"; explain="Tie → resolved by average points across the year."; }
+  return { coin, explain };
+}
+
+function renderYearCard(){
+  const year = (monthPick.value || ym(new Date())).slice(0,4);
+  yearTitle.textContent = year;
+  const ys = computeYearSummary(year);
+  yearCoin.textContent   = ys.coin ? EMOJI[ys.coin] : "–";
+  yearExplain.textContent = ys.explain;
+}
+
 /* ================== DAY FORM ================== */
 function renderTasksForDay(){
   taskList.innerHTML="";
@@ -520,7 +580,7 @@ function rerunAuto(){
   coinOut.textContent = isNaN(eff) ? "–" : EMOJI[coinForEff(eff)];
 }
 
-/* ================== CALENDAR / SUMMARY ================== */
+/* ================== CALENDAR / SUMMARY RENDER ================== */
 function monthMeta(ymStr){ const [Y,M]=ymStr.split("-").map(Number); const first=new Date(Y,M-1,1); const startW=first.getDay(); const days=new Date(Y,M,0).getDate(); return {Y,M,first,startW,days}; }
 function renderCalendar(){
   const mval=monthPick.value; const {Y,M,startW,days}=monthMeta(mval);
@@ -558,6 +618,8 @@ function renderCalendar(){
   else { if (avg>=2.5) monthResult="gold"; else if (avg>=1.75) monthResult="silver"; else monthResult="bronze"; explain="Tie → resolved by average points."; }
   monthCoin.textContent = n ? EMOJI[monthResult] : "–";
   monthExplain.textContent = n ? explain : "No data this month.";
+
+  renderYearCard(); // update the year rollup for the selected month’s year
 }
 
 /* ================== BUTTONS ================== */
@@ -566,12 +628,12 @@ saveBtn.addEventListener("click", ()=>{
   stopAll(key);
   const { perc, mins }=gatherTaskData();
   const eff=weightedEfficiency(perc); const coin=coinForEff(eff);
-  store.days[key]={ eff, coin, note:note.value, tasks:perc, mins:mins }; saveStore(); renderCalendar();
+  store.days[key]={ eff, coin, note:note.value, tasks:perc, mins:mins }; saveStore(); renderCalendar(); renderYearCard();
 });
-delBtn.addEventListener("click", ()=>{   // fixed name (was deleteBtn)
+delBtn.addEventListener("click", ()=>{
   const key=datePick.value; stopAll(key); silenceAll(key);
   delete store.days[key]; delete tstore.days[key]; saveStore(); saveTimers();
-  renderTasksForDay(); rerunAuto(); renderCalendar();
+  renderTasksForDay(); rerunAuto(); renderCalendar(); renderYearCard();
 });
 clearInputsBtn.addEventListener("click", ()=>{
   taskList.querySelectorAll("input").forEach(inp=> inp.value="");
@@ -591,7 +653,7 @@ resetTasksBtn.addEventListener("click", ()=>{
 saveCfgBtn.addEventListener("click", ()=>{
   const b=+thBronze.value, s=+thSilver.value, g=+thGold.value;
   cfg.thresholds={ BRONZE_MAX:clamp(b,0,98), SILVER_MAX:clamp(s,Math.max(b+1,1),99), GOLD_MIN:clamp(g,Math.max(s+1,2),100) };
-  cfg.tasks=normalizeWeights(cfg.tasks); saveCfg(); renderTasksForDay(); rerunAuto(); renderCalendar();
+  cfg.tasks=normalizeWeights(cfg.tasks); saveCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); renderYearCard();
 });
 
 formUpdateBtn.addEventListener("click", ()=> evaluateForm(monthPick.value));
@@ -599,7 +661,7 @@ formResetBtn.addEventListener("click", ()=>{ if (!confirm("Reset form back to �
 
 prevMonthBtn.addEventListener("click", ()=>{ const {Y,M}=monthMeta(monthPick.value); const prev=new Date(Y,M-2,1); monthPick.value=ym(prev); renderCalendar(); });
 nextMonthBtn.addEventListener("click", ()=>{ const {Y,M}=monthMeta(monthPick.value); const next=new Date(Y,M,1); monthPick.value=ym(next); renderCalendar(); });
-monthPick.addEventListener("input", renderCalendar);
+monthPick.addEventListener("input", ()=>{ renderCalendar(); renderYearCard(); });
 datePick.addEventListener("input", ()=>{ silenceAllAcrossDays(); renderTasksForDay(); rerunAuto(); resetTick(); checkAlarms(datePick.value); });
 
 /* ================== CONFIG UI RENDER ================== */
@@ -649,7 +711,7 @@ document.querySelector("label input#importFile").addEventListener("change",(e)=>
     if (data.timers) tstore=data.timers;
     if (data.form)   form=data.form;
     saveCfg(); saveStore(); saveTimers(); saveForm();
-    renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); updateTimerUI(); renderFormCard(); checkAlarms(datePick.value);
+    renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); renderYearCard(); updateTimerUI(); renderFormCard(); checkAlarms(datePick.value);
     alert("Imported successfully.");
   }catch(err){ alert("Invalid JSON file."); } }; r.readAsText(f);
 });
