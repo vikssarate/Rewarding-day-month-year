@@ -11,7 +11,7 @@
   header, footer { padding:12px 16px; display:flex; gap:10px; align-items:center; justify-content:space-between; }
   header h1 { margin:0; font-size:18px; letter-spacing:.2px; }
   .wrap { max-width:1000px; margin:0 auto; padding:16px; display:grid; grid-template-columns:360px 1fr; gap:16px; }
-  .card { background:var(--card); border-radius:12px; padding:14px; box-shadow:0 0 0 1px rgba(255,255,255,.05) inset; }
+  .card { background:var(--card); border-radius:12px; padding:14px; box-shadow:0 0 0 1px rgba(255,255,255,.05) inset; overflow-x:auto; } /* allow horizontal scroll if needed */
   .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   label { font-size:13px; color:var(--muted); }
   input, select, textarea, button { background:#12162a; border:1px solid #2a3052; color:var(--ink); padding:8px 10px; border-radius:8px; }
@@ -28,8 +28,8 @@
   .stat { font-size:13px; color:var(--muted); }
   .big { font-size:28px; font-weight:700; }
   .muted { color:var(--muted); }
-  /* Task row: name | timer | start/stop | minutes | percent | alarm stop */
-  .taskrow { display:grid; grid-template-columns:1fr 88px 90px 86px 72px 90px; gap:8px; align-items:center; margin-bottom:6px; }
+  /* Task row: name | timer | start/stop | minutes | percent */
+  .taskrow { display:grid; grid-template-columns:1fr 88px 90px 86px 72px; gap:8px; align-items:center; margin-bottom:6px; min-width:620px; }
   .taskrow span { font-size:13px; }
   .timechip { font-variant-numeric:tabular-nums; text-align:center; padding:6px 8px; border:1px solid #2a3052; border-radius:8px; background:#12162a; min-width:84px; }
   .sep { height:1px; background:#2a3052; margin:10px 0; opacity:.6 }
@@ -270,7 +270,7 @@ const thBronze=$("#thBronze"), thSilver=$("#thSilver"), thGold=$("#thGold"), cfg
 })();
 
 /* ======== TIMERS + ALARMS ======== */
-const alarmHandles = {}; // { dayKey: { taskId: intervalId } }
+const ALARMS = {}; // { dayKey: { taskId: intervalId } }
 
 function getDayTimers(dayKey){
   if (!tstore.days[dayKey]) tstore.days[dayKey] = {};
@@ -287,7 +287,7 @@ function getDayTimers(dayKey){
 
 function startTimer(dayKey, taskId){
   const timers=getDayTimers(dayKey);
-  // single active timer – stop others
+  // stop others (single active)
   for (const [id,st] of Object.entries(timers)){
     if (st.running){ st.sec += Math.floor((Date.now()-st.start)/1000); st.running=false; st.start=null; }
   }
@@ -313,26 +313,22 @@ function startAlarm(dayKey, taskId){
   if (st.ringing) return;
   st.fired=true; st.ringing=true; saveTimers();
   playChime();
-  if (!alarmHandles[dayKey]) alarmHandles[dayKey]={};
-  alarmHandles[dayKey][taskId] = setInterval(()=> playChime(), ALARM_REPEAT_MS);
+  if (!ALARMS[dayKey]) ALARMS[dayKey]={};
+  ALARMS[dayKey][taskId] = setInterval(()=> playChime(), ALARM_REPEAT_MS);
   updateTimerUI();
 }
 function stopAlarm(dayKey, taskId, keepAck=true){
   const timers=getDayTimers(dayKey); const st=timers[taskId]; if (!st) return;
   st.ringing=false; if (!keepAck) st.fired=false; saveTimers();
-  if (alarmHandles[dayKey] && alarmHandles[dayKey][taskId]){ clearInterval(alarmHandles[dayKey][taskId]); delete alarmHandles[dayKey][taskId]; }
+  if (ALARMS[dayKey] && ALARMS[dayKey][taskId]){ clearInterval(ALARMS[dayKey][taskId]); delete ALARMS[dayKey][taskId]; }
   updateTimerUI();
 }
 function silenceAll(dayKey){
   const timers=getDayTimers(dayKey);
-  for (const t of cfg.tasks){ stopAlarm(dayKey, t.id, true); } // keep ack so it won't auto-ring again until below target
+  for (const t of cfg.tasks){ stopAlarm(dayKey, t.id, true); }
 }
 function silenceAllAcrossDays(){
-  for (const dk in alarmHandles){
-    for (const id in alarmHandles[dk]){ clearInterval(alarmHandles[dk][id]); }
-    delete alarmHandles[dk];
-  }
-  // mark all ringing=false but keep fired=true if already >= target
+  for (const dk in ALARMS){ for (const id in ALARMS[dk]){ clearInterval(ALARMS[dk][id]); } delete ALARMS[dk]; }
   for (const [dk, tasks] of Object.entries(tstore.days)){
     for (const [id, st] of Object.entries(tasks)){ if (st.ringing){ st.ringing=false; st.fired=true; } }
   }
@@ -360,7 +356,6 @@ function checkAlarms(dayKey){
 
     if (targetSec>0 && elapsed>=targetSec){
       if (!st.fired) startAlarm(dayKey, t.id); // start & mark fired
-      // if user had stopped manually earlier (fired==true but not ringing), do nothing
     } else {
       // below target → stop alarm (if any) and re-arm
       if (st.ringing) stopAlarm(dayKey, t.id, false);
@@ -388,20 +383,26 @@ function renderTasksForDay(){
       <button id="btn-${t.id}" data-task="${t.id}">Start</button>
       <input type="number" min="0" value="${minsVal}" data-task="${t.id}" data-kind="mins" placeholder="min" />
       <input type="number" min="0" max="100" value="${percVal}" data-task="${t.id}" data-kind="perc" placeholder="%" />
-      <button class="alarmBtn hidden" id="alarm-${t.id}" data-task="${t.id}" title="Stop alarm">🔔 Stop</button>
     `;
     taskList.appendChild(row);
   }
 
+  // Inputs
   taskList.querySelectorAll("input").forEach(inp=> inp.addEventListener("input",(e)=>onTaskInput(e.target)));
+
+  // Main button: Start/Stop or 🔔 Stop if ringing
   taskList.querySelectorAll("button[id^='btn-']").forEach(btn=>{
     btn.addEventListener("click", ()=>{
-      const dk=datePick.value, id=btn.dataset.task, st=getDayTimers(dk)[id];
-      if (st.running) stopTimer(dk,id); else startTimer(dk,id);
+      const dayKey = datePick.value;
+      const id = btn.dataset.task;
+      const st = getDayTimers(dayKey)[id];
+
+      // If alarm is ringing, clicking the main button stops the alarm
+      if (st.ringing) { stopAlarm(dayKey, id, true); return; }
+
+      if (st.running) stopTimer(dayKey, id);
+      else startTimer(dayKey, id);
     });
-  });
-  taskList.querySelectorAll(".alarmBtn").forEach(btn=>{
-    btn.addEventListener("click", ()=> stopAlarm(datePick.value, btn.dataset.task, true));
   });
 
   updateTimerUI(); syncMinutesFromTimers(); checkAlarms(dayKey);
@@ -419,8 +420,7 @@ function onTaskInput(el){
   } else {
     const perc=clamp(+percInp.value||0,0,100); const mins=target?Math.round((perc/100)*target):0; minsInp.value=mins||""; st.sec=Math.round(mins*60);
   }
-  // dropping below target re-arms; staying above keeps 'fired' true but silences if you clicked Stop
-  if (st.sec < target*60){ st.fired=false; }
+  if (st.sec < target*60){ st.fired=false; } // re-arm if below target
   saveTimers(); updateTimerUI(); checkAlarms(datePick.value); rerunAuto();
 }
 
@@ -442,13 +442,23 @@ function syncMinutesFromTimers(live=false){
 function updateTimerUI(live=false){
   const dk=datePick.value, timers=tstore.days[dk]||{};
   for (const t of cfg.tasks){
-    const el=$("#time-"+t.id), btn=$("#btn-"+t.id), abtn=$("#alarm-"+t.id); if (!el||!btn||!abtn) continue;
+    const el=document.getElementById(`time-${t.id}`);
+    const btn=document.getElementById(`btn-${t.id}`);
+    if (!el||!btn) continue;
     const st=timers[t.id]||{sec:0,running:false,start:null,ringing:false};
     const sec=st.running ? st.sec + Math.floor((Date.now()-st.start)/1000) : st.sec;
     el.textContent = secsToHMS(sec);
-    btn.textContent = st.running ? "Stop" : "Start";
-    btn.style.borderColor = st.running ? "#7bd88f" : "#2a3052";
-    abtn.classList.toggle('hidden', !st.ringing);
+
+    if (st.ringing){
+      btn.textContent = "🔔 Stop";
+      btn.style.borderColor = "#ffd166";
+    } else if (st.running){
+      btn.textContent = "Stop";
+      btn.style.borderColor = "#7bd88f";
+    } else {
+      btn.textContent = "Start";
+      btn.style.borderColor = "#2a3052";
+    }
   }
 }
 
