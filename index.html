@@ -23,7 +23,8 @@
   .day .dnum { font-size:12px; color:var(--muted); }
   .coin { font-size:22px; text-align:right; }
   .ghost { opacity:.35 }
-  .summary { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-top:8px; }
+  /* responsive 3–4 card grid */
+  .summary { display:grid; gap:8px; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); margin-top:8px; }
   .pill { background:#12162a; border:1px solid #2a3052; border-radius:999px; padding:10px 12px; display:flex; align-items:center; justify-content:center; gap:8px; }
   .stat { font-size:13px; color:var(--muted); }
   .big { font-size:28px; font-weight:700; }
@@ -126,7 +127,7 @@
     </details>
   </section>
 
-  <!-- Right: Month + summary -->
+  <!-- Right: Month + summary (now 4 cards with Form) -->
   <section class="card">
     <div class="row" style="justify-content:space-between">
       <div class="row">
@@ -159,14 +160,15 @@
         <div class="big" id="monthCoin">–</div>
         <div class="muted" id="monthExplain"></div>
       </div>
-      <!-- NEW: Form card -->
+
+      <!-- Form card -->
       <div class="card" id="formCard">
         <div class="stat">Form Stage</div>
         <div class="big" id="formStageBig">👶 Toddler</div>
         <div id="formTrack" class="track" style="margin:6px 0 8px 0;"></div>
         <div class="row">
           <button id="formUpdateBtn" title="Process months up to the one you are viewing">Update Form</button>
-          <button id="formResetBtn" title="Reset to Toddler">Reset</button>
+          <button id="formResetBtn"  title="Reset to Toddler">Reset</button>
         </div>
         <div class="muted" id="formExplain" style="margin-top:6px;font-size:12px;"></div>
       </div>
@@ -214,20 +216,16 @@ let audioCtx = null;
 let soundEnabled = false;
 let audioPrimed = false;
 function initAudio(){ if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
-function primeAudioOnce(){
-  if (audioPrimed) return; audioPrimed = true;
-  try { initAudio(); audioCtx.resume(); const o=audioCtx.createOscillator(), g=audioCtx.createGain();
-        g.gain.value=0.0001; o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+0.05); } catch(e){}
-}
-['pointerdown','keydown','touchstart'].forEach(ev=> window.addEventListener(ev, primeAudioOnce, {once:true,capture:true}));
+function primeAudioOnce(){ if (audioPrimed) return; audioPrimed=true; try{ initAudio(); audioCtx.resume(); const o=audioCtx.createOscillator(), g=audioCtx.createGain(); g.gain.value=0.0001; o.connect(g); g.connect(audioCtx.destination); o.start(); o.stop(audioCtx.currentTime+0.05);}catch(e){} }
+['pointerdown','keydown','touchstart'].forEach(ev=> window.addEventListener(ev, primeAudioOnce, { once:true, capture:true }));
 function playChime(){
   if (!soundEnabled) return;
-  try { initAudio(); audioCtx.resume(); } catch(e){}
+  try{ initAudio(); audioCtx.resume(); }catch(e){}
   const ctx=audioCtx, now=ctx.currentTime;
   [880,1175,1760].forEach((f,i)=>{
     const o=ctx.createOscillator(), g=ctx.createGain();
     o.type='sine'; o.frequency.value=f; o.connect(g); g.connect(ctx.destination);
-    const t=now + i*0.15;
+    const t=now+i*0.15;
     g.gain.setValueAtTime(0.0001,t);
     g.gain.linearRampToValueAtTime(0.2,t+0.02);
     g.gain.exponentialRampToValueAtTime(0.0001,t+0.25);
@@ -237,16 +235,13 @@ function playChime(){
 }
 
 /* ======== LOAD/SAVE ======== */
-function loadCfg(){ const c=localStorage.getItem(SKCFG);
-  if (c){ const obj=JSON.parse(c); obj.tasks=(obj.tasks||[]).map(t=>({target:60,...t})); return obj; }
-  const seeded={ tasks:DEFAULT_TASKS, thresholds:DEFAULT_THRESHOLDS }; localStorage.setItem(SKCFG,JSON.stringify(seeded)); return seeded;
-}
+function loadCfg(){ const c=localStorage.getItem(SKCFG); if (c){ const obj=JSON.parse(c); obj.tasks=(obj.tasks||[]).map(t=>({target:60,...t})); return obj; } const seeded={tasks:DEFAULT_TASKS, thresholds:DEFAULT_THRESHOLDS}; localStorage.setItem(SKCFG,JSON.stringify(seeded)); return seeded; }
 function saveCfg(){ localStorage.setItem(SKCFG, JSON.stringify(cfg)); }
-function loadStore(){ const s=localStorage.getItem(SKEY); if(s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKEY,JSON.stringify(seeded)); return seeded; }
+function loadStore(){ const s=localStorage.getItem(SKEY); if (s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKEY,JSON.stringify(seeded)); return seeded; }
 function saveStore(){ localStorage.setItem(SKEY, JSON.stringify(store)); }
-function loadTimers(){ const s=localStorage.getItem(SKTMR); if(s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKTMR,JSON.stringify(seeded)); return seeded; }
+function loadTimers(){ const s=localStorage.getItem(SKTMR); if (s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKTMR, JSON.stringify(seeded)); return seeded; }
 function saveTimers(){ localStorage.setItem(SKTMR, JSON.stringify(tstore)); }
-function loadForm(){ const s=localStorage.getItem(SKFORM); if(s) return JSON.parse(s); const seeded={stage:0, evaluatedThrough:null}; localStorage.setItem(SKFORM,JSON.stringify(seeded)); return seeded; }
+function loadForm(){ const s=localStorage.getItem(SKFORM); if (s) return JSON.parse(s); const seeded={stage:0, evaluatedThrough:null}; localStorage.setItem(SKFORM, JSON.stringify(seeded)); return seeded; }
 function saveForm(){ localStorage.setItem(SKFORM, JSON.stringify(form)); }
 
 /* ======== HELPERS ======== */
@@ -340,7 +335,6 @@ function renderFormCard(){
   const stageLabel = `${FORM_EMOJI[form.stage]} ${FORM_STAGES[form.stage]}`;
   formStageBig.textContent = stageLabel;
 
-  // track
   formTrack.innerHTML = "";
   FORM_STAGES.forEach((name, i)=>{
     const step = document.createElement("div"); step.className="step";
@@ -351,50 +345,37 @@ function renderFormCard(){
     if (i<FORM_STAGES.length-1){ const dash=document.createElement("span"); dash.textContent="—"; dash.style.opacity=".5"; formTrack.appendChild(dash); }
   });
 
-  // explain
   formExplain.textContent = `Rule: each ACTIVE month (+1) promotes; any MISSED month (0 days) demotes (−1). Last evaluated: ${form.evaluatedThrough || "—"}.`;
 }
-
 function monthStats(ymStr){
-  // returns {days, avgPts}
   let days=0, pts=0, n=0, b=0,s=0,g=0;
   for (const key in store.days){
     if (key.startsWith(ymStr+"-")){
       days++;
-      const coin = store.days[key].coin;
+      const coin=store.days[key].coin;
       if (coin==="bronze"){ b++; pts+=1; n++; }
       if (coin==="silver"){ s++; pts+=2; n++; }
       if (coin==="gold"){   g++; pts+=3; n++; }
     }
   }
   const avg = n? (pts/n) : 0;
-  return { days, avgPts: avg, b, s, g };
+  return { days, avgPts: avg, b,s,g };
 }
-
 function ymToObj(ymStr){ const [Y,M]=ymStr.split("-").map(Number); return {Y,M}; }
 function cmpYM(a,b){ const A=ymToObj(a), B=ymToObj(b); if (A.Y!==B.Y) return A.Y-B.Y; return A.M-B.M; }
-function nextYM(ymStr){ const {Y,M}=ymToObj(ymStr); const d = new Date(Y, M, 1); return ym(d); } // add 1 month
-function prevYM(ymStr){ const {Y,M}=ymToObj(ymStr); const d = new Date(Y, M-2, 1); return ym(d); }
+function nextYM(ymStr){ const {Y,M}=ymToObj(ymStr); const d=new Date(Y,M,1); return ym(d); }
 function firstMonthInStore(){ let m=null; for (const k in store.days){ const ymKey=k.slice(0,7); if (!m || cmpYM(ymKey,m)<0) m=ymKey; } return m; }
-function lastMonthInStore(){ let m=null; for (const k in store.days){ const ymKey=k.slice(0,7); if (!m || cmpYM(ymKey,m)>0) m=ymKey; } return m; }
-
-function monthsBetweenInclusive(a,b){
-  if (!a||!b) return [];
-  const out=[]; let cur=a;
-  while (cmpYM(cur,b)<=0){ out.push(cur); cur=nextYM(cur); }
-  return out;
-}
-
+function monthsBetweenInclusive(a,b){ if (!a||!b) return []; const out=[]; let cur=a; while (cmpYM(cur,b)<=0){ out.push(cur); cur=nextYM(cur); } return out; }
 function evaluateForm(upToYM){
   const earliest = form.evaluatedThrough ? nextYM(form.evaluatedThrough) : firstMonthInStore();
-  if (!earliest){ form.evaluatedThrough = upToYM; saveForm(); renderFormCard(); return; } // nothing to process
+  if (!earliest){ form.evaluatedThrough = upToYM; saveForm(); renderFormCard(); return; }
   const months = monthsBetweenInclusive(earliest, upToYM);
-  let changes = [];
+  let changes=[];
   for (const m of months){
     const s = monthStats(m);
     if (s.days===0){
-      if (form.stage>0){ form.stage -= 1; changes.push(`↓ ${m}: missed month (−1)`); }
-      else { changes.push(`= ${m}: missed month (at min)`); }
+      if (form.stage>0){ form.stage -= 1; changes.push(`↓ ${m}: missed (−1)`); }
+      else { changes.push(`= ${m}: missed (at min)`); }
     } else if (s.days>=10 || s.avgPts>=1.75){
       if (form.stage<FORM_STAGES.length-1){ form.stage += 1; changes.push(`↑ ${m}: active (+1)`); }
       else { changes.push(`= ${m}: active (at max)`); }
@@ -403,8 +384,7 @@ function evaluateForm(upToYM){
     }
     form.evaluatedThrough = m;
   }
-  saveForm();
-  renderFormCard();
+  saveForm(); renderFormCard();
   if (changes.length) formExplain.textContent += `  Updates: ${changes.join(" · ")}`;
 }
 
@@ -531,9 +511,7 @@ function renderCalendar(){
   }
   cBronze.textContent=b; cSilver.textContent=s; cGold.textContent=g;
 
-  const avg=n?(ptsSum/n):0;
-  avgPts.textContent=fmt2(avg);
-  streakEl.textContent=bestStreak;
+  const avg=n?(ptsSum/n):0; avgPts.textContent=fmt2(avg); streakEl.textContent=bestStreak;
 
   let monthResult=null, explain="";
   const maxCount=Math.max(b,s,g); const winners=[];
@@ -554,7 +532,7 @@ saveBtn.addEventListener("click", ()=>{
   const eff=weightedEfficiency(perc); const coin=coinForEff(eff);
   store.days[key]={ eff, coin, note:note.value, tasks:perc, mins:mins }; saveStore(); renderCalendar();
 });
-deleteBtn.addEventListener("click", ()=>{
+delBtn.addEventListener("click", ()=>{   // fixed name (was deleteBtn)
   const key=datePick.value; stopAll(key); silenceAll(key);
   delete store.days[key]; delete tstore.days[key]; saveStore(); saveTimers();
   renderTasksForDay(); rerunAuto(); renderCalendar();
@@ -568,14 +546,8 @@ clearInputsBtn.addEventListener("click", ()=>{
 stopAllBtn.addEventListener("click", ()=>{ primeAudioOnce(); stopAll(datePick.value); });
 silenceAllBtn.addEventListener("click", ()=>{ primeAudioOnce(); silenceAll(datePick.value); });
 
-formUpdateBtn.addEventListener("click", ()=>{
-  const upTo = monthPick.value;
-  evaluateForm(upTo);
-});
-formResetBtn.addEventListener("click", ()=>{
-  if (!confirm("Reset form back to 👶 Toddler?")) return;
-  form = { stage:0, evaluatedThrough:null }; saveForm(); renderFormCard();
-});
+formUpdateBtn.addEventListener("click", ()=> evaluateForm(monthPick.value));
+formResetBtn.addEventListener("click", ()=>{ if (!confirm("Reset form back to 👶 Toddler?")) return; form={stage:0,evaluatedThrough:null}; saveForm(); renderFormCard(); });
 
 prevMonthBtn.addEventListener("click", ()=>{ const {Y,M}=monthMeta(monthPick.value); const prev=new Date(Y,M-2,1); monthPick.value=ym(prev); renderCalendar(); });
 nextMonthBtn.addEventListener("click", ()=>{ const {Y,M}=monthMeta(monthPick.value); const next=new Date(Y,M,1); monthPick.value=ym(next); renderCalendar(); });
@@ -587,7 +559,8 @@ exportBtn.addEventListener("click", ()=>{
   stopAll(datePick.value);
   const payload={ cfg, store, timers:tstore, form };
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
-  const url=URL.createObjectURL(blob); const a=document.createElement("a"); a.href=url; a.download="daily-coins-backup.json"; a.click(); URL.revokeObjectURL(url);
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a"); a.href=url; a.download="daily-coins-backup.json"; a.click(); URL.revokeObjectURL(url);
 });
 document.querySelector("label input#importFile").addEventListener("change",(e)=>{
   const f=e.target.files?.[0]; if(!f) return;
