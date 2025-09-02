@@ -1,1 +1,578 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Daily Coins – Bronze / Silver / Gold</title>
+<style>
+  :root { --bg:#0f1220; --card:#181c2f; --ink:#eef1ff; --muted:#9aa3c7; --accent:#6ca8ff; --ok:#7bd88f; --warn:#ffd166; --bad:#ff7575; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial; background:var(--bg); color:var(--ink); }
+  header, footer { padding:12px 16px; display:flex; gap:10px; align-items:center; justify-content:space-between; }
+  header h1 { margin:0; font-size:18px; letter-spacing:.2px; }
+  .wrap { max-width:1000px; margin:0 auto; padding:16px; display:grid; grid-template-columns:360px 1fr; gap:16px; }
+  .card { background:var(--card); border-radius:12px; padding:14px; box-shadow:0 0 0 1px rgba(255,255,255,.05) inset; overflow-x:auto; } /* allow horizontal scroll if needed */
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  label { font-size:13px; color:var(--muted); }
+  input, select, textarea, button { background:#12162a; border:1px solid #2a3052; color:var(--ink); padding:8px 10px; border-radius:8px; }
+  input[type="number"] { width:78px; }
+  button { cursor:pointer; }
+  button.primary { background:linear-gradient(180deg,#2f67ff,#2149c8); border:none; }
+  .grid { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; }
+  .day { aspect-ratio:1/1; background:#12162a; border:1px solid #2a3052; border-radius:10px; padding:8px; position:relative; display:flex; flex-direction:column; justify-content:space-between; }
+  .day .dnum { font-size:12px; color:var(--muted); }
+  .coin { font-size:22px; text-align:right; }
+  .ghost { opacity:.35 }
+  .summary { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; margin-top:8px; }
+  .pill { background:#12162a; border:1px solid #2a3052; border-radius:999px; padding:10px 12px; display:flex; align-items:center; justify-content:center; gap:8px; }
+  .stat { font-size:13px; color:var(--muted); }
+  .big { font-size:28px; font-weight:700; }
+  .muted { color:var(--muted); }
+  /* Task row: name | timer | start/stop | minutes | percent */
+  .taskrow { display:grid; grid-template-columns:1fr 88px 90px 86px 72px; gap:8px; align-items:center; margin-bottom:6px; min-width:620px; }
+  .taskrow span { font-size:13px; }
+  .timechip { font-variant-numeric:tabular-nums; text-align:center; padding:6px 8px; border:1px solid #2a3052; border-radius:8px; background:#12162a; min-width:84px; }
+  .sep { height:1px; background:#2a3052; margin:10px 0; opacity:.6 }
+  .note { width:100%; min-height:70px; }
+  .kicker { font-size:12px; color:var(--muted); margin-top:-6px; }
+  .linkish { color:var(--accent); text-decoration:underline; cursor:pointer; }
+  .center { text-align:center; }
+  .right { text-align:right; }
+  .hidden { display:none !important; }
+  /* Config task row: name | id | weight | target minutes */
+  .taskcfgrow { display:grid; grid-template-columns:1fr 140px 90px 120px; gap:8px; align-items:center; margin-bottom:6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Daily Coins</h1>
+  <div class="row">
+    <button id="exportBtn">Export JSON</button>
+    <label class="linkish">
+      Import JSON
+      <input id="importFile" type="file" accept="application/json" class="hidden" />
+    </label>
+    <!-- Sound controls -->
+    <input id="soundToggle" type="checkbox" />
+    <label for="soundToggle" class="linkish" title="Enable alarm">Sound</label>
+    <button id="testSoundBtn" title="Play test chime">Test</button>
+  </div>
+</header>
 
+<div class="wrap">
+  <!-- Left: Day editor -->
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <label>Date</label><br/>
+        <input type="date" id="datePick" />
+      </div>
+      <div>
+        <label>Month</label><br/>
+        <input type="month" id="monthPick" />
+      </div>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <label>Tasks for today</label>
+        <div id="taskList"></div>
+        <div class="kicker">
+          Set each task’s <b>Target (min)</b> in ⚙️ Configure. Start/Stop timer to auto-fill minutes (percent syncs).
+        </div>
+      </div>
+      <div class="row">
+        <button id="stopAllBtn" title="Stop all running timers">Stop All</button>
+        <button id="silenceAllBtn" title="Silence all alarms">Silence</button>
+        <button id="clearInputsBtn" title="Clear inputs">Clear</button>
+      </div>
+    </div>
+
+    <div class="sep"></div>
+
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <label>Auto-computed</label>
+        <div class="row">
+          <div class="pill"><span>Efficiency:</span> <b id="effOut">0%</b></div>
+          <div class="pill"><span>Coin:</span> <span id="coinOut" style="font-size:20px">–</span></div>
+        </div>
+      </div>
+      <div class="row">
+        <button id="saveBtn" class="primary">Save Day</button>
+        <button id="deleteBtn" title="Clear this day">Delete</button>
+      </div>
+    </div>
+
+    <div class="sep"></div>
+
+    <label>Notes</label>
+    <textarea id="note" class="note" placeholder="Optional note for the day…"></textarea>
+
+    <div class="sep"></div>
+
+    <details>
+      <summary>⚙️ Configure (tasks, weights, thresholds)</summary>
+      <div class="kicker">Weights normalize to 1. Set a daily <b>Target minutes</b> for timers.</div>
+      <div class="row muted" style="gap:16px;margin:6px 0 4px 0;">
+        <span style="width:100%;font-size:12px">Columns: Name | ID | Weight (0–1) | Target minutes</span>
+      </div>
+      <div id="cfgTasks"></div>
+      <button id="addTaskBtn">+ Add Task</button>
+      <div class="sep"></div>
+      <div class="row">
+        <label>Bronze max %</label><input id="thBronze" type="number" min="0" max="100" value="59" />
+        <label>Silver max %</label><input id="thSilver" type="number" min="0" max="100" value="84" />
+        <label>Gold starts at</label><input id="thGold" type="number" min="0" max="100" value="85" />
+        <button id="saveCfgBtn">Save Config</button>
+      </div>
+    </details>
+  </section>
+
+  <!-- Right: Month view -->
+  <section class="card">
+    <div class="row" style="justify-content:space-between">
+      <div class="row">
+        <button id="prevMonth">◀</button>
+        <div id="monthTitle" style="font-weight:700"></div>
+        <button id="nextMonth">▶</button>
+      </div>
+      <div class="row">
+        <div class="pill"><span>🥉</span><b id="cBronze">0</b></div>
+        <div class="pill"><span>🥈</span><b id="cSilver">0</b></div>
+        <div class="pill"><span>🥇</span><b id="cGold">0</b></div>
+      </div>
+    </div>
+
+    <div class="grid" id="calGrid"></div>
+
+    <div class="sep"></div>
+
+    <div class="summary">
+      <div class="card">
+        <div class="stat">Monthly Average Points</div>
+        <div class="big" id="avgPts">0.00</div>
+      </div>
+      <div class="card">
+        <div class="stat">Longest Streak (≥Silver)</div>
+        <div class="big" id="streak">0</div>
+      </div>
+      <div class="card center">
+        <div class="stat">Overall Month</div>
+        <div class="big" id="monthCoin">–</div>
+        <div class="muted" id="monthExplain"></div>
+      </div>
+    </div>
+
+  </section>
+</div>
+
+<footer class="muted">
+  <div>Tip: tap a day in the calendar to edit; export regularly for backup.</div>
+  <div class="right">Made for 🥉/🥈/🥇 habit tracking</div>
+</footer>
+
+<script>
+/* ================== CONFIG ================== */
+const DEFAULT_TASKS = [
+  { id:"study",   name:"memorisation",                weight:0.4, target:120 },
+  { id:"math",    name:"Math Practice",               weight:0.2, target:60  },
+  { id:"rein",    name:"Throughout day Reinforcing",  weight:0.2, target:45  },
+  { id:"recall",  name:"Night Recall",                weight:0.2, target:30  },
+];
+const DEFAULT_THRESHOLDS = { BRONZE_MAX:59, SILVER_MAX:84, GOLD_MIN:85 };
+const ALARM_REPEAT_MS = 5000; // repeat interval for ringing
+
+const PTS   = { bronze:1, silver:2, gold:3 };
+const EMOJI = { bronze:"🥉", silver:"🥈", gold:"🥇" };
+
+/* ================== STATE & STORAGE ================== */
+const SKEY   = "dailyCoins.v1";       // days data
+const SKCFG  = "dailyCoinsCfg.v1";    // tasks + thresholds
+const SKTMR  = "dailyCoinsTimers.v2"; // timers (sec, running, start, fired, ringing)
+
+let cfg   = loadCfg();
+let store = loadStore();
+let tstore = loadTimers();
+let tickHandle = null;
+
+/* ======== SOUND (WebAudio) ======== */
+let audioCtx = null;
+let soundEnabled = false;
+function initAudio(){ if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+function playChime(){
+  if (!soundEnabled) return;
+  try { initAudio(); audioCtx.resume(); } catch(e){}
+  const ctx = audioCtx, now = ctx.currentTime;
+  [880,1175,1760].forEach((f,i)=>{
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type='sine'; o.frequency.value=f; o.connect(g); g.connect(ctx.destination);
+    const t = now + i*0.15;
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.linearRampToValueAtTime(0.2,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+0.25);
+    o.start(t); o.stop(t+0.27);
+  });
+  if (navigator.vibrate) navigator.vibrate(250);
+}
+
+/* ======== LOAD/SAVE ======== */
+function loadCfg(){
+  const c = localStorage.getItem(SKCFG);
+  if (c) { const obj = JSON.parse(c); obj.tasks = (obj.tasks||[]).map(t=>({target:60,...t})); return obj; }
+  const seeded = { tasks: DEFAULT_TASKS, thresholds: DEFAULT_THRESHOLDS };
+  localStorage.setItem(SKCFG, JSON.stringify(seeded)); return seeded;
+}
+function saveCfg(){ localStorage.setItem(SKCFG, JSON.stringify(cfg)); }
+function loadStore(){ const s = localStorage.getItem(SKEY); if (s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKEY,JSON.stringify(seeded)); return seeded; }
+function saveStore(){ localStorage.setItem(SKEY, JSON.stringify(store)); }
+function loadTimers(){
+  const s = localStorage.getItem(SKTMR);
+  if (s) return JSON.parse(s);
+  const seeded = { days:{} }; localStorage.setItem(SKTMR, JSON.stringify(seeded)); return seeded;
+}
+function saveTimers(){ localStorage.setItem(SKTMR, JSON.stringify(tstore)); }
+
+/* ======== HELPERS ======== */
+const $ = (q) => document.querySelector(q);
+const fmt2 = (n) => (Math.round(n*100)/100).toFixed(2);
+function ymd(d){ return d.toISOString().slice(0,10); }
+function ym(d){ return d.toISOString().slice(0,7); }
+function clamp(n,min,max){ return Math.max(min, Math.min(max, n)); }
+function pad2(n){ return String(n).padStart(2,"0"); }
+function secsToHMS(s){ const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), ss=Math.floor(s%60); return `${pad2(h)}:${pad2(m)}:${pad2(ss)}`; }
+function normalizeWeights(tasks){ const sum=tasks.reduce((a,t)=>a+(+t.weight||0),0)||1; return tasks.map(t=>({...t,weight:(+t.weight||0)/sum})); }
+function coinForEff(eff){ const {BRONZE_MAX,SILVER_MAX,GOLD_MIN}=cfg.thresholds; if (eff>=GOLD_MIN) return "gold"; if (eff<=BRONZE_MAX) return "bronze"; return "silver"; }
+function weightedEfficiency(taskPercents){ const tasks=normalizeWeights(cfg.tasks); let acc=0; for (const t of tasks){ const p=clamp(+taskPercents[t.id]||0,0,100); acc += (p/100)*t.weight*100; } return clamp(acc,0,100); }
+
+/* ======== SOUND UI ======== */
+const soundToggle=$("#soundToggle"), testSoundBtn=$("#testSoundBtn");
+soundEnabled = localStorage.getItem('dailyCoins.sound')==='1';
+if (soundToggle) soundToggle.checked = soundEnabled;
+soundToggle?.addEventListener('change', ()=>{ soundEnabled=soundToggle.checked; localStorage.setItem('dailyCoins.sound',soundEnabled?'1':'0'); if (soundEnabled){ initAudio(); audioCtx.resume(); playChime(); }});
+testSoundBtn?.addEventListener('click', ()=>{ soundEnabled=true; localStorage.setItem('dailyCoins.sound','1'); if (soundToggle) soundToggle.checked=true; initAudio(); audioCtx.resume(); playChime(); });
+
+/* ======== DOM REFS ======== */
+const datePick=$("#datePick"), monthPick=$("#monthPick"), taskList=$("#taskList");
+const effOut=$("#effOut"), coinOut=$("#coinOut"), note=$("#note");
+const saveBtn=$("#saveBtn"), delBtn=$("#deleteBtn"), clearInputsBtn=$("#clearInputsBtn"), stopAllBtn=$("#stopAllBtn"), silenceAllBtn=$("#silenceAllBtn");
+const calGrid=$("#calGrid"), monthTitle=$("#monthTitle"), prevMonthBtn=$("#prevMonth"), nextMonthBtn=$("#nextMonth");
+const cBronze=$("#cBronze"), cSilver=$("#cSilver"), cGold=$("#cGold"), avgPts=$("#avgPts"), streakEl=$("#streak"), monthCoin=$("#monthCoin"), monthExplain=$("#monthExplain");
+const exportBtn=$("#exportBtn"), importFile=$("#importFile");
+const thBronze=$("#thBronze"), thSilver=$("#thSilver"), thGold=$("#thGold"), cfgTasks=$("#cfgTasks"), addTaskBtn=$("#addTaskBtn"), saveCfgBtn=$("#saveCfgBtn");
+
+/* ======== INIT ======== */
+(function init(){
+  const today=new Date(); datePick.value=ymd(today); monthPick.value=ym(today);
+  renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); ensureTick();
+})();
+
+/* ======== TIMERS + ALARMS ======== */
+const ALARMS = {}; // { dayKey: { taskId: intervalId } }
+
+function getDayTimers(dayKey){
+  if (!tstore.days[dayKey]) tstore.days[dayKey] = {};
+  for (const t of cfg.tasks){
+    if (!tstore.days[dayKey][t.id]) tstore.days[dayKey][t.id] = { sec:0, running:false, start:null, fired:false, ringing:false };
+    else {
+      const st = tstore.days[dayKey][t.id];
+      if (st.fired===undefined) st.fired=false;
+      if (st.ringing===undefined) st.ringing=false;
+    }
+  }
+  return tstore.days[dayKey];
+}
+
+function startTimer(dayKey, taskId){
+  const timers=getDayTimers(dayKey);
+  // stop others (single active)
+  for (const [id,st] of Object.entries(timers)){
+    if (st.running){ st.sec += Math.floor((Date.now()-st.start)/1000); st.running=false; st.start=null; }
+  }
+  const st = timers[taskId];
+  if (!st.running){ st.running=true; st.start=Date.now(); saveTimers(); }
+  ensureTick(); updateTimerUI(); syncMinutesFromTimers(); checkAlarms(dayKey); rerunAuto();
+}
+function stopTimer(dayKey, taskId){
+  const st=getDayTimers(dayKey)[taskId];
+  if (st && st.running){ st.sec += Math.floor((Date.now()-st.start)/1000); st.running=false; st.start=null; saveTimers(); updateTimerUI(); syncMinutesFromTimers(); checkAlarms(dayKey); rerunAuto(); }
+}
+function stopAll(dayKey){
+  const timers=getDayTimers(dayKey); let changed=false;
+  for (const st of Object.values(timers)){
+    if (st.running){ st.sec += Math.floor((Date.now()-st.start)/1000); st.running=false; st.start=null; changed=true; }
+  }
+  if (changed){ saveTimers(); updateTimerUI(); syncMinutesFromTimers(); checkAlarms(dayKey); rerunAuto(); }
+}
+
+/* Alarm control */
+function startAlarm(dayKey, taskId){
+  const timers=getDayTimers(dayKey); const st=timers[taskId];
+  if (st.ringing) return;
+  st.fired=true; st.ringing=true; saveTimers();
+  playChime();
+  if (!ALARMS[dayKey]) ALARMS[dayKey]={};
+  ALARMS[dayKey][taskId] = setInterval(()=> playChime(), ALARM_REPEAT_MS);
+  updateTimerUI();
+}
+function stopAlarm(dayKey, taskId, keepAck=true){
+  const timers=getDayTimers(dayKey); const st=timers[taskId]; if (!st) return;
+  st.ringing=false; if (!keepAck) st.fired=false; saveTimers();
+  if (ALARMS[dayKey] && ALARMS[dayKey][taskId]){ clearInterval(ALARMS[dayKey][taskId]); delete ALARMS[dayKey][taskId]; }
+  updateTimerUI();
+}
+function silenceAll(dayKey){
+  const timers=getDayTimers(dayKey);
+  for (const t of cfg.tasks){ stopAlarm(dayKey, t.id, true); }
+}
+function silenceAllAcrossDays(){
+  for (const dk in ALARMS){ for (const id in ALARMS[dk]){ clearInterval(ALARMS[dk][id]); } delete ALARMS[dk]; }
+  for (const [dk, tasks] of Object.entries(tstore.days)){
+    for (const [id, st] of Object.entries(tasks)){ if (st.ringing){ st.ringing=false; st.fired=true; } }
+  }
+  saveTimers(); updateTimerUI();
+}
+function ensureTick(){
+  if (tickHandle) return;
+  tickHandle = setInterval(()=>{
+    const dayKey=datePick.value;
+    const timers=tstore.days[dayKey]||{};
+    let any=false; for (const st of Object.values(timers)) if (st.running){ any=true; break; }
+    if (!any) return;
+    updateTimerUI(true); syncMinutesFromTimers(true); checkAlarms(dayKey); rerunAuto();
+  }, 1000);
+}
+function resetTick(){ if (tickHandle){ clearInterval(tickHandle); tickHandle=null; } ensureTick(); }
+
+/* Fire / re-arm logic */
+function checkAlarms(dayKey){
+  const timers=getDayTimers(dayKey);
+  for (const t of cfg.tasks){
+    const st=timers[t.id]; if (!st) continue;
+    const targetSec=(+t.target||0)*60;
+    const elapsed = st.running ? st.sec + Math.floor((Date.now()-st.start)/1000) : st.sec;
+
+    if (targetSec>0 && elapsed>=targetSec){
+      if (!st.fired) startAlarm(dayKey, t.id); // start & mark fired
+    } else {
+      // below target → stop alarm (if any) and re-arm
+      if (st.ringing) stopAlarm(dayKey, t.id, false);
+      if (st.fired) { st.fired=false; saveTimers(); }
+    }
+  }
+}
+
+/* ======== DAY FORM ======== */
+function renderTasksForDay(){
+  taskList.innerHTML="";
+  const dayKey=datePick.value;
+  const day=store.days[dayKey]||{tasks:{},mins:{}};
+  note.value=day.note||"";
+  getDayTimers(dayKey); // seed
+
+  for (const t of cfg.tasks){
+    const percVal=day.tasks?.[t.id]??"";
+    const minsVal=day.mins?.[t.id]??"";
+    const row=document.createElement("div");
+    row.className="taskrow"; row.dataset.task=t.id;
+    row.innerHTML=`
+      <span>${t.name} <span class="muted">(${fmt2(t.weight*100)}%) • target ${t.target||0}m</span></span>
+      <div class="timechip" id="time-${t.id}">00:00:00</div>
+      <button id="btn-${t.id}" data-task="${t.id}">Start</button>
+      <input type="number" min="0" value="${minsVal}" data-task="${t.id}" data-kind="mins" placeholder="min" />
+      <input type="number" min="0" max="100" value="${percVal}" data-task="${t.id}" data-kind="perc" placeholder="%" />
+    `;
+    taskList.appendChild(row);
+  }
+
+  // Inputs
+  taskList.querySelectorAll("input").forEach(inp=> inp.addEventListener("input",(e)=>onTaskInput(e.target)));
+
+  // Main button: Start/Stop or 🔔 Stop if ringing
+  taskList.querySelectorAll("button[id^='btn-']").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const dayKey = datePick.value;
+      const id = btn.dataset.task;
+      const st = getDayTimers(dayKey)[id];
+
+      // If alarm is ringing, clicking the main button stops the alarm
+      if (st.ringing) { stopAlarm(dayKey, id, true); return; }
+
+      if (st.running) stopTimer(dayKey, id);
+      else startTimer(dayKey, id);
+    });
+  });
+
+  updateTimerUI(); syncMinutesFromTimers(); checkAlarms(dayKey);
+}
+
+function onTaskInput(el){
+  const id=el.dataset.task, kind=el.dataset.kind, row=el.closest(".taskrow");
+  const minsInp=row.querySelector('input[data-kind="mins"]');
+  const percInp=row.querySelector('input[data-kind="perc"]');
+  const t=cfg.tasks.find(x=>x.id===id)||{target:0}; const target=+t.target||0;
+  const st=getDayTimers(datePick.value)[id];
+
+  if (kind==="mins"){
+    const mins=+minsInp.value||0; const perc=target?clamp((mins/target)*100,0,100):0; percInp.value=Math.round(perc); st.sec=Math.round(mins*60);
+  } else {
+    const perc=clamp(+percInp.value||0,0,100); const mins=target?Math.round((perc/100)*target):0; minsInp.value=mins||""; st.sec=Math.round(mins*60);
+  }
+  if (st.sec < target*60){ st.fired=false; } // re-arm if below target
+  saveTimers(); updateTimerUI(); checkAlarms(datePick.value); rerunAuto();
+}
+
+function syncMinutesFromTimers(live=false){
+  const dk=datePick.value, timers=getDayTimers(dk);
+  for (const t of cfg.tasks){
+    const st=timers[t.id]; if (!st) continue;
+    const liveSec=st.running ? st.sec + Math.floor((Date.now()-st.start)/1000) : st.sec;
+    const mins=Math.max(0, Math.round(liveSec/60));
+    const row=taskList.querySelector(`.taskrow[data-task="${t.id}"]`); if (!row) continue;
+    const minsInp=row.querySelector('input[data-kind="mins"]'); const percInp=row.querySelector('input[data-kind="perc"]');
+    if (live || minsInp.value==="" || +minsInp.value!==mins){
+      minsInp.value = mins ? String(mins) : "";
+      const perc=(+t.target||0) ? clamp((mins/(+t.target))*100,0,100) : 0; percInp.value=Math.round(perc);
+    }
+  }
+}
+
+function updateTimerUI(live=false){
+  const dk=datePick.value, timers=tstore.days[dk]||{};
+  for (const t of cfg.tasks){
+    const el=document.getElementById(`time-${t.id}`);
+    const btn=document.getElementById(`btn-${t.id}`);
+    if (!el||!btn) continue;
+    const st=timers[t.id]||{sec:0,running:false,start:null,ringing:false};
+    const sec=st.running ? st.sec + Math.floor((Date.now()-st.start)/1000) : st.sec;
+    el.textContent = secsToHMS(sec);
+
+    if (st.ringing){
+      btn.textContent = "🔔 Stop";
+      btn.style.borderColor = "#ffd166";
+    } else if (st.running){
+      btn.textContent = "Stop";
+      btn.style.borderColor = "#7bd88f";
+    } else {
+      btn.textContent = "Start";
+      btn.style.borderColor = "#2a3052";
+    }
+  }
+}
+
+function gatherTaskData(){
+  const perc={}, mins={};
+  taskList.querySelectorAll(".taskrow").forEach(row=>{
+    const id=row.dataset.task;
+    const pVal=+row.querySelector('input[data-kind="perc"]').value||0;
+    const mVal=+row.querySelector('input[data-kind="mins"]').value||0;
+    perc[id]=pVal; if (mVal>0) mins[id]=mVal;
+  });
+  return { perc, mins };
+}
+
+function rerunAuto(){
+  const { perc } = gatherTaskData();
+  const eff = weightedEfficiency(perc);
+  effOut.textContent = fmt2(eff) + "%";
+  coinOut.textContent = isNaN(eff) ? "–" : EMOJI[coinForEff(eff)];
+}
+
+/* ======== BUTTONS ======== */
+saveBtn.addEventListener("click", ()=>{
+  const key=datePick.value; if (!key) return;
+  stopAll(key); const { perc, mins }=gatherTaskData();
+  const eff=weightedEfficiency(perc); const coin=coinForEff(eff);
+  store.days[key]={ eff, coin, note:note.value, tasks:perc, mins:mins }; saveStore(); renderCalendar();
+});
+delBtn.addEventListener("click", ()=>{
+  const key=datePick.value; stopAll(key); silenceAll(key);
+  delete store.days[key]; delete tstore.days[key]; saveStore(); saveTimers();
+  renderTasksForDay(); rerunAuto(); renderCalendar();
+});
+clearInputsBtn.addEventListener("click", ()=>{
+  taskList.querySelectorAll("input").forEach(inp=> inp.value="");
+  const timers=getDayTimers(datePick.value);
+  for (const st of Object.values(timers)){ st.sec=0; st.running=false; st.start=null; st.fired=false; st.ringing=false; }
+  silenceAll(datePick.value); saveTimers(); updateTimerUI(); rerunAuto();
+});
+stopAllBtn.addEventListener("click", ()=> stopAll(datePick.value));
+silenceAllBtn.addEventListener("click", ()=> silenceAll(datePick.value));
+
+/* ======== CALENDAR ======== */
+function monthMeta(ymStr){ const [Y,M]=ymStr.split("-").map(Number); const first=new Date(Y,M-1,1); const startW=first.getDay(); const days=new Date(Y,M,0).getDate(); return {Y,M,first,startW,days}; }
+function renderCalendar(){
+  const mval=monthPick.value; const {Y,M,startW,days}=monthMeta(mval);
+  monthTitle.textContent=new Date(Y,M-1).toLocaleString(undefined,{month:"long",year:"numeric"});
+  calGrid.innerHTML=""; for (let i=0;i<startW;i++){ const d=document.createElement("div"); d.className="day ghost"; calGrid.appendChild(d); }
+  for (let d=1; d<=days; d++){
+    const key=`${mval}-${String(d).padStart(2,"0")}`; const info=store.days[key];
+    const el=document.createElement("div"); el.className="day";
+    el.innerHTML=`<div class="dnum">${d}</div><div class="coin">${info?EMOJI[info.coin]:"·"}</div>`;
+    el.addEventListener("click", ()=>{ datePick.value=key; renderTasksForDay(); rerunAuto(); window.scrollTo({top:0,behavior:"smooth"}); });
+    calGrid.appendChild(el);
+  }
+  let b=0,s=0,g=0, ptsSum=0, n=0, bestStreak=0, cur=0;
+  for (let d=1; d<=days; d++){
+    const key=`${mval}-${String(d).padStart(2,"0")}`, info=store.days[key]; if (!info){ cur=0; continue; }
+    if (info.coin==="bronze") b++; if (info.coin==="silver") s++; if (info.coin==="gold") g++;
+    ptsSum += PTS[info.coin]; n++; if (info.coin==="silver"||info.coin==="gold"){ cur++; bestStreak=Math.max(bestStreak,cur);} else cur=0;
+  }
+  cBronze.textContent=b; cSilver.textContent=s; cGold.textContent=g;
+  const avg=n?(ptsSum/n):0; avgPts.textContent=fmt2(avg); streakEl.textContent=bestStreak;
+  let monthResult=null, explain=""; const maxCount=Math.max(b,s,g); const winners=[]; if(b===maxCount)winners.push("bronze"); if(s===maxCount)winners.push("silver"); if(g===maxCount)winners.push("gold");
+  if (winners.length===1){ monthResult=winners[0]; explain="Dominant coin by count."; }
+  else { if (avg>=2.5) monthResult="gold"; else if (avg>=1.75) monthResult="silver"; else monthResult="bronze"; explain="Tie → resolved by average points."; }
+  monthCoin.textContent=n?EMOJI[monthResult]:"–"; monthExplain.textContent=n?explain:"No data this month.";
+}
+prevMonthBtn.addEventListener("click", ()=>{ const {Y,M}=monthMeta(monthPick.value); const prev=new Date(Y,M-2,1); monthPick.value=ym(prev); renderCalendar(); });
+nextMonthBtn.addEventListener("click", ()=>{ const {Y,M}=monthMeta(monthPick.value); const next=new Date(Y,M,1); monthPick.value=ym(next); renderCalendar(); });
+monthPick.addEventListener("input", renderCalendar);
+datePick.addEventListener("input", ()=>{ silenceAllAcrossDays(); renderTasksForDay(); rerunAuto(); resetTick(); checkAlarms(datePick.value); });
+
+/* ======== CONFIG UI ======== */
+function renderCfg(){
+  thBronze.value=cfg.thresholds.BRONZE_MAX; thSilver.value=cfg.thresholds.SILVER_MAX; thGold.value=cfg.thresholds.GOLD_MIN;
+  cfgTasks.innerHTML="";
+  for (const t of cfg.tasks){
+    const row=document.createElement("div"); row.className="taskcfgrow";
+    row.innerHTML=`<input type="text" value="${t.name}" data-id="${t.id}" data-k="name" />
+      <input type="text" value="${t.id}" data-id="${t.id}" data-k="id" />
+      <input type="number" step="0.05" value="${+t.weight||0}" data-id="${t.id}" data-k="weight" />
+      <input type="number" step="5" value="${+t.target||0}" data-id="${t.id}" data-k="target" />`;
+    cfgTasks.appendChild(row);
+  }
+  cfgTasks.querySelectorAll("input").forEach(inp=>{
+    inp.addEventListener("input",(e)=>{
+      const id=e.target.dataset.id, k=e.target.dataset.k, v=e.target.value;
+      const idx=cfg.tasks.findIndex(x=>x.id===id); if (idx<0) return;
+      if (k==="weight") cfg.tasks[idx][k]=+v; else if (k==="target") cfg.tasks[idx][k]=Math.max(0,+v|0); else cfg.tasks[idx][k]=v;
+    });
+  });
+}
+addTaskBtn.addEventListener("click", ()=>{ const newid="task"+Math.random().toString(36).slice(2,7); cfg.tasks.push({id:newid,name:"New Task",weight:0.1,target:30}); renderCfg(); });
+saveCfgBtn.addEventListener("click", ()=>{ const b=+thBronze.value, s=+thSilver.value, g=+thGold.value;
+  cfg.thresholds={ BRONZE_MAX:clamp(b,0,98), SILVER_MAX:clamp(s,Math.max(b+1,1),99), GOLD_MIN:clamp(g,Math.max(s+1,2),100) };
+  cfg.tasks=normalizeWeights(cfg.tasks); saveCfg(); renderTasksForDay(); rerunAuto(); renderCalendar();
+});
+
+/* ======== IMPORT / EXPORT ======== */
+exportBtn.addEventListener("click", ()=>{
+  stopAll(datePick.value); const payload={ cfg, store, timers:tstore };
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob);
+  const a=document.createElement("a"); a.href=url; a.download="daily-coins-backup.json"; a.click(); URL.revokeObjectURL(url);
+});
+document.querySelector("label input#importFile").addEventListener("change",(e)=>{
+  const f=e.target.files?.[0]; if(!f) return;
+  const r=new FileReader(); r.onload=()=>{ try{
+    const data=JSON.parse(r.result);
+    if (data.cfg) cfg={ thresholds:DEFAULT_THRESHOLDS, tasks:DEFAULT_TASKS, ...data.cfg, tasks:(data.cfg.tasks||DEFAULT_TASKS).map(t=>({target:60,...t})) };
+    if (data.store) store=data.store; if (data.timers) tstore=data.timers;
+    saveCfg(); saveStore(); saveTimers(); renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); updateTimerUI(); checkAlarms(datePick.value); alert("Imported successfully.");
+  }catch(err){ alert("Invalid JSON file."); } }; r.readAsText(f);
+});
+</script>
+</body>
+</html>
