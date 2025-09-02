@@ -28,8 +28,8 @@
   .stat { font-size:13px; color:var(--muted); }
   .big { font-size:28px; font-weight:700; }
   .muted { color:var(--muted); }
-  /* Task row: name | timer | start/stop | minutes | percent */
-  .taskrow { display:grid; grid-template-columns:1fr 88px 90px 86px 72px; gap:8px; align-items:center; margin-bottom:6px; }
+  /* Task row: name | timer | start/stop | minutes | percent | alarm stop */
+  .taskrow { display:grid; grid-template-columns:1fr 88px 90px 86px 72px 90px; gap:8px; align-items:center; margin-bottom:6px; }
   .taskrow span { font-size:13px; }
   .timechip { font-variant-numeric:tabular-nums; text-align:center; padding:6px 8px; border:1px solid #2a3052; border-radius:8px; background:#12162a; min-width:84px; }
   .sep { height:1px; background:#2a3052; margin:10px 0; opacity:.6 }
@@ -38,7 +38,7 @@
   .linkish { color:var(--accent); text-decoration:underline; cursor:pointer; }
   .center { text-align:center; }
   .right { text-align:right; }
-  .hidden { display:none; }
+  .hidden { display:none !important; }
   /* Config task row: name | id | weight | target minutes */
   .taskcfgrow { display:grid; grid-template-columns:1fr 140px 90px 120px; gap:8px; align-items:center; margin-bottom:6px; }
 </style>
@@ -52,7 +52,7 @@
       Import JSON
       <input id="importFile" type="file" accept="application/json" class="hidden" />
     </label>
-    <!-- NEW: sound controls -->
+    <!-- Sound controls -->
     <input id="soundToggle" type="checkbox" />
     <label for="soundToggle" class="linkish" title="Enable alarm">Sound</label>
     <button id="testSoundBtn" title="Play test chime">Test</button>
@@ -85,6 +85,7 @@
       </div>
       <div class="row">
         <button id="stopAllBtn" title="Stop all running timers">Stop All</button>
+        <button id="silenceAllBtn" title="Silence all alarms">Silence</button>
         <button id="clearInputsBtn" title="Clear inputs">Clear</button>
       </div>
     </div>
@@ -114,7 +115,7 @@
 
     <details>
       <summary>⚙️ Configure (tasks, weights, thresholds)</summary>
-      <div class="kicker">Weights should sum ≈ 1.0 (we normalize). Set a daily <b>Target minutes</b> for timers.</div>
+      <div class="kicker">Weights normalize to 1. Set a daily <b>Target minutes</b> for timers.</div>
       <div class="row muted" style="gap:16px;margin:6px 0 4px 0;">
         <span style="width:100%;font-size:12px">Columns: Name | ID | Weight (0–1) | Target minutes</span>
       </div>
@@ -182,6 +183,7 @@ const DEFAULT_TASKS = [
   { id:"recall",  name:"Night Recall",                weight:0.2, target:30  },
 ];
 const DEFAULT_THRESHOLDS = { BRONZE_MAX:59, SILVER_MAX:84, GOLD_MIN:85 };
+const ALARM_REPEAT_MS = 5000; // repeat interval for ringing
 
 const PTS   = { bronze:1, silver:2, gold:3 };
 const EMOJI = { bronze:"🥉", silver:"🥈", gold:"🥇" };
@@ -189,366 +191,274 @@ const EMOJI = { bronze:"🥉", silver:"🥈", gold:"🥇" };
 /* ================== STATE & STORAGE ================== */
 const SKEY   = "dailyCoins.v1";       // days data
 const SKCFG  = "dailyCoinsCfg.v1";    // tasks + thresholds
-const SKTMR  = "dailyCoinsTimers.v1"; // per-day timer runtime (seconds + 'fired')
+const SKTMR  = "dailyCoinsTimers.v2"; // timers (sec, running, start, fired, ringing)
 
 let cfg   = loadCfg();
 let store = loadStore();
 let tstore = loadTimers();
-
-// one interval to tick all running timers
 let tickHandle = null;
 
 /* ======== SOUND (WebAudio) ======== */
 let audioCtx = null;
 let soundEnabled = false;
-function initAudio(){
-  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-}
+function initAudio(){ if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
 function playChime(){
   if (!soundEnabled) return;
   try { initAudio(); audioCtx.resume(); } catch(e){}
-  const ctx = audioCtx;
-  const now = ctx.currentTime;
-  const notes = [880, 1175, 1760]; // A5, D6, A6
-  notes.forEach((f,i)=>{
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = 'sine';
-    o.frequency.value = f;
-    o.connect(g); g.connect(ctx.destination);
+  const ctx = audioCtx, now = ctx.currentTime;
+  [880,1175,1760].forEach((f,i)=>{
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type='sine'; o.frequency.value=f; o.connect(g); g.connect(ctx.destination);
     const t = now + i*0.15;
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.linearRampToValueAtTime(0.2, t+0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, t+0.25);
+    g.gain.setValueAtTime(0.0001,t);
+    g.gain.linearRampToValueAtTime(0.2,t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+0.25);
     o.start(t); o.stop(t+0.27);
   });
   if (navigator.vibrate) navigator.vibrate(250);
 }
 
-/* ================== LOAD/SAVE ================== */
+/* ======== LOAD/SAVE ======== */
 function loadCfg(){
   const c = localStorage.getItem(SKCFG);
-  if (c) {
-    const obj = JSON.parse(c);
-    obj.tasks = (obj.tasks||[]).map(t => ({ target:60, ...t }));
-    return obj;
-  }
+  if (c) { const obj = JSON.parse(c); obj.tasks = (obj.tasks||[]).map(t=>({target:60,...t})); return obj; }
   const seeded = { tasks: DEFAULT_TASKS, thresholds: DEFAULT_THRESHOLDS };
-  localStorage.setItem(SKCFG, JSON.stringify(seeded));
-  return seeded;
+  localStorage.setItem(SKCFG, JSON.stringify(seeded)); return seeded;
 }
 function saveCfg(){ localStorage.setItem(SKCFG, JSON.stringify(cfg)); }
-
-function loadStore(){
-  const s = localStorage.getItem(SKEY);
-  if (s) return JSON.parse(s);
-  const seeded = { days:{} };
-  localStorage.setItem(SKEY, JSON.stringify(seeded));
-  return seeded;
-}
+function loadStore(){ const s = localStorage.getItem(SKEY); if (s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKEY,JSON.stringify(seeded)); return seeded; }
 function saveStore(){ localStorage.setItem(SKEY, JSON.stringify(store)); }
-
 function loadTimers(){
   const s = localStorage.getItem(SKTMR);
   if (s) return JSON.parse(s);
-  const seeded = { days:{} }; // { "YYYY-MM-DD": { [taskId]: {sec:0, running:false, start:null, fired:false} } }
-  localStorage.setItem(SKTMR, JSON.stringify(seeded));
-  return seeded;
+  const seeded = { days:{} }; localStorage.setItem(SKTMR, JSON.stringify(seeded)); return seeded;
 }
 function saveTimers(){ localStorage.setItem(SKTMR, JSON.stringify(tstore)); }
 
-/* ================== HELPERS ================== */
+/* ======== HELPERS ======== */
 const $ = (q) => document.querySelector(q);
 const fmt2 = (n) => (Math.round(n*100)/100).toFixed(2);
 function ymd(d){ return d.toISOString().slice(0,10); }
 function ym(d){ return d.toISOString().slice(0,7); }
 function clamp(n,min,max){ return Math.max(min, Math.min(max, n)); }
 function pad2(n){ return String(n).padStart(2,"0"); }
-function secsToHMS(s){
-  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), ss = Math.floor(s%60);
-  return `${pad2(h)}:${pad2(m)}:${pad2(ss)}`;
-}
-function normalizeWeights(tasks){
-  const sum = tasks.reduce((a,t)=>a+(+t.weight||0),0) || 1;
-  return tasks.map(t => ({...t, weight:(+t.weight||0)/sum }));
-}
-function coinForEff(eff){
-  const { BRONZE_MAX, SILVER_MAX, GOLD_MIN } = cfg.thresholds;
-  if (eff >= GOLD_MIN) return "gold";
-  if (eff <= BRONZE_MAX) return "bronze";
-  return "silver";
-}
-function weightedEfficiency(taskPercents){
-  const tasks = normalizeWeights(cfg.tasks);
-  let acc = 0;
-  for (const t of tasks){
-    const p = clamp(+taskPercents[t.id] || 0, 0, 100);
-    acc += (p/100) * t.weight * 100;
-  }
-  return clamp(acc, 0, 100);
-}
+function secsToHMS(s){ const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), ss=Math.floor(s%60); return `${pad2(h)}:${pad2(m)}:${pad2(ss)}`; }
+function normalizeWeights(tasks){ const sum=tasks.reduce((a,t)=>a+(+t.weight||0),0)||1; return tasks.map(t=>({...t,weight:(+t.weight||0)/sum})); }
+function coinForEff(eff){ const {BRONZE_MAX,SILVER_MAX,GOLD_MIN}=cfg.thresholds; if (eff>=GOLD_MIN) return "gold"; if (eff<=BRONZE_MAX) return "bronze"; return "silver"; }
+function weightedEfficiency(taskPercents){ const tasks=normalizeWeights(cfg.tasks); let acc=0; for (const t of tasks){ const p=clamp(+taskPercents[t.id]||0,0,100); acc += (p/100)*t.weight*100; } return clamp(acc,0,100); }
 
-/* ================== SOUND UI ================== */
-const soundToggle  = $("#soundToggle");
-const testSoundBtn = $("#testSoundBtn");
-soundEnabled = localStorage.getItem('dailyCoins.sound') === '1';
+/* ======== SOUND UI ======== */
+const soundToggle=$("#soundToggle"), testSoundBtn=$("#testSoundBtn");
+soundEnabled = localStorage.getItem('dailyCoins.sound')==='1';
 if (soundToggle) soundToggle.checked = soundEnabled;
-soundToggle?.addEventListener('change', () => {
-  soundEnabled = soundToggle.checked;
-  localStorage.setItem('dailyCoins.sound', soundEnabled ? '1' : '0');
-  if (soundEnabled){ initAudio(); audioCtx.resume(); playChime(); }
-});
-testSoundBtn?.addEventListener('click', () => {
-  soundEnabled = true; localStorage.setItem('dailyCoins.sound','1');
-  if (soundToggle) soundToggle.checked = true;
-  initAudio(); audioCtx.resume(); playChime();
-});
+soundToggle?.addEventListener('change', ()=>{ soundEnabled=soundToggle.checked; localStorage.setItem('dailyCoins.sound',soundEnabled?'1':'0'); if (soundEnabled){ initAudio(); audioCtx.resume(); playChime(); }});
+testSoundBtn?.addEventListener('click', ()=>{ soundEnabled=true; localStorage.setItem('dailyCoins.sound','1'); if (soundToggle) soundToggle.checked=true; initAudio(); audioCtx.resume(); playChime(); });
 
-/* ================== UI BINDINGS ================== */
-const datePick = $("#datePick");
-const monthPick = $("#monthPick");
-const taskList = $("#taskList");
-const effOut = $("#effOut");
-const coinOut = $("#coinOut");
-const note = $("#note");
-const saveBtn = $("#saveBtn");
-const delBtn = $("#deleteBtn");
-const clearInputsBtn = $("#clearInputsBtn");
-const stopAllBtn = $("#stopAllBtn");
-const calGrid = $("#calGrid");
-const monthTitle = $("#monthTitle");
-const prevMonthBtn = $("#prevMonth");
-const nextMonthBtn = $("#nextMonth");
-const cBronze = $("#cBronze");
-const cSilver = $("#cSilver");
-const cGold = $("#cGold");
-const avgPts = $("#avgPts");
-const streakEl = $("#streak");
-const monthCoin = $("#monthCoin");
-const monthExplain = $("#monthExplain");
-const exportBtn = $("#exportBtn");
-const importFile = $("#importFile");
+/* ======== DOM REFS ======== */
+const datePick=$("#datePick"), monthPick=$("#monthPick"), taskList=$("#taskList");
+const effOut=$("#effOut"), coinOut=$("#coinOut"), note=$("#note");
+const saveBtn=$("#saveBtn"), delBtn=$("#deleteBtn"), clearInputsBtn=$("#clearInputsBtn"), stopAllBtn=$("#stopAllBtn"), silenceAllBtn=$("#silenceAllBtn");
+const calGrid=$("#calGrid"), monthTitle=$("#monthTitle"), prevMonthBtn=$("#prevMonth"), nextMonthBtn=$("#nextMonth");
+const cBronze=$("#cBronze"), cSilver=$("#cSilver"), cGold=$("#cGold"), avgPts=$("#avgPts"), streakEl=$("#streak"), monthCoin=$("#monthCoin"), monthExplain=$("#monthExplain");
+const exportBtn=$("#exportBtn"), importFile=$("#importFile");
+const thBronze=$("#thBronze"), thSilver=$("#thSilver"), thGold=$("#thGold"), cfgTasks=$("#cfgTasks"), addTaskBtn=$("#addTaskBtn"), saveCfgBtn=$("#saveCfgBtn");
 
-const thBronze = $("#thBronze");
-const thSilver = $("#thSilver");
-const thGold = $("#thGold");
-const cfgTasks = $("#cfgTasks");
-const addTaskBtn = $("#addTaskBtn");
-const saveCfgBtn = $("#saveCfgBtn");
-
-/* ================== INIT ================== */
+/* ======== INIT ======== */
 (function init(){
-  const today = new Date();
-  datePick.value = ymd(today);
-  monthPick.value = ym(today);
-  renderCfg();
-  renderTasksForDay();
-  rerunAuto();
-  renderCalendar();
-  ensureTick();
+  const today=new Date(); datePick.value=ymd(today); monthPick.value=ym(today);
+  renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); ensureTick();
 })();
 
-/* ================== TIMER CORE ================== */
+/* ======== TIMERS + ALARMS ======== */
+const alarmHandles = {}; // { dayKey: { taskId: intervalId } }
+
 function getDayTimers(dayKey){
   if (!tstore.days[dayKey]) tstore.days[dayKey] = {};
   for (const t of cfg.tasks){
-    if (!tstore.days[dayKey][t.id]) {
-      tstore.days[dayKey][t.id] = { sec:0, running:false, start:null, fired:false };
-    } else if (tstore.days[dayKey][t.id].fired === undefined) {
-      tstore.days[dayKey][t.id].fired = false; // back-compat
+    if (!tstore.days[dayKey][t.id]) tstore.days[dayKey][t.id] = { sec:0, running:false, start:null, fired:false, ringing:false };
+    else {
+      const st = tstore.days[dayKey][t.id];
+      if (st.fired===undefined) st.fired=false;
+      if (st.ringing===undefined) st.ringing=false;
     }
   }
   return tstore.days[dayKey];
 }
+
 function startTimer(dayKey, taskId){
-  const timers = getDayTimers(dayKey);
-  // stop any other running timers (single active)
-  for (const [id, st] of Object.entries(timers)){
-    if (st.running){
-      st.sec += Math.floor((Date.now() - st.start)/1000);
-      st.running = false; st.start = null;
-    }
+  const timers=getDayTimers(dayKey);
+  // single active timer – stop others
+  for (const [id,st] of Object.entries(timers)){
+    if (st.running){ st.sec += Math.floor((Date.now()-st.start)/1000); st.running=false; st.start=null; }
   }
   const st = timers[taskId];
-  if (!st.running){ st.running = true; st.start = Date.now(); saveTimers(); }
+  if (!st.running){ st.running=true; st.start=Date.now(); saveTimers(); }
   ensureTick(); updateTimerUI(); syncMinutesFromTimers(); checkAlarms(dayKey); rerunAuto();
 }
 function stopTimer(dayKey, taskId){
-  const st = getDayTimers(dayKey)[taskId];
-  if (st && st.running){
-    st.sec += Math.floor((Date.now() - st.start)/1000);
-    st.running = false; st.start = null;
-    saveTimers(); updateTimerUI(); syncMinutesFromTimers(); checkAlarms(dayKey); rerunAuto();
-  }
+  const st=getDayTimers(dayKey)[taskId];
+  if (st && st.running){ st.sec += Math.floor((Date.now()-st.start)/1000); st.running=false; st.start=null; saveTimers(); updateTimerUI(); syncMinutesFromTimers(); checkAlarms(dayKey); rerunAuto(); }
 }
 function stopAll(dayKey){
-  const timers = getDayTimers(dayKey);
-  let changed = false;
+  const timers=getDayTimers(dayKey); let changed=false;
   for (const st of Object.values(timers)){
-    if (st.running){
-      st.sec += Math.floor((Date.now() - st.start)/1000);
-      st.running = false; st.start = null; changed = true;
-    }
+    if (st.running){ st.sec += Math.floor((Date.now()-st.start)/1000); st.running=false; st.start=null; changed=true; }
   }
   if (changed){ saveTimers(); updateTimerUI(); syncMinutesFromTimers(); checkAlarms(dayKey); rerunAuto(); }
+}
+
+/* Alarm control */
+function startAlarm(dayKey, taskId){
+  const timers=getDayTimers(dayKey); const st=timers[taskId];
+  if (st.ringing) return;
+  st.fired=true; st.ringing=true; saveTimers();
+  playChime();
+  if (!alarmHandles[dayKey]) alarmHandles[dayKey]={};
+  alarmHandles[dayKey][taskId] = setInterval(()=> playChime(), ALARM_REPEAT_MS);
+  updateTimerUI();
+}
+function stopAlarm(dayKey, taskId, keepAck=true){
+  const timers=getDayTimers(dayKey); const st=timers[taskId]; if (!st) return;
+  st.ringing=false; if (!keepAck) st.fired=false; saveTimers();
+  if (alarmHandles[dayKey] && alarmHandles[dayKey][taskId]){ clearInterval(alarmHandles[dayKey][taskId]); delete alarmHandles[dayKey][taskId]; }
+  updateTimerUI();
+}
+function silenceAll(dayKey){
+  const timers=getDayTimers(dayKey);
+  for (const t of cfg.tasks){ stopAlarm(dayKey, t.id, true); } // keep ack so it won't auto-ring again until below target
+}
+function silenceAllAcrossDays(){
+  for (const dk in alarmHandles){
+    for (const id in alarmHandles[dk]){ clearInterval(alarmHandles[dk][id]); }
+    delete alarmHandles[dk];
+  }
+  // mark all ringing=false but keep fired=true if already >= target
+  for (const [dk, tasks] of Object.entries(tstore.days)){
+    for (const [id, st] of Object.entries(tasks)){ if (st.ringing){ st.ringing=false; st.fired=true; } }
+  }
+  saveTimers(); updateTimerUI();
 }
 function ensureTick(){
   if (tickHandle) return;
   tickHandle = setInterval(()=>{
-    const dayKey = datePick.value;
-    const timers = tstore.days[dayKey] || {};
-    let any = false;
-    for (const st of Object.values(timers)) if (st.running) { any = true; break; }
+    const dayKey=datePick.value;
+    const timers=tstore.days[dayKey]||{};
+    let any=false; for (const st of Object.values(timers)) if (st.running){ any=true; break; }
     if (!any) return;
-    updateTimerUI(true); // live
-    syncMinutesFromTimers(true);
-    checkAlarms(dayKey);
-    rerunAuto();
+    updateTimerUI(true); syncMinutesFromTimers(true); checkAlarms(dayKey); rerunAuto();
   }, 1000);
 }
-function resetTick(){
-  if (tickHandle){ clearInterval(tickHandle); tickHandle=null; }
-  ensureTick();
-}
+function resetTick(){ if (tickHandle){ clearInterval(tickHandle); tickHandle=null; } ensureTick(); }
 
-/* Fire alarm when target reached once; re-arm if drop below target */
+/* Fire / re-arm logic */
 function checkAlarms(dayKey){
-  const timers = getDayTimers(dayKey);
+  const timers=getDayTimers(dayKey);
   for (const t of cfg.tasks){
-    const st = timers[t.id]; if (!st) continue;
-    const targetSec = (+t.target || 0) * 60;
-    if (targetSec <= 0) { st.fired = true; continue; }
-    const elapsed = st.running ? st.sec + Math.floor((Date.now() - st.start)/1000) : st.sec;
-    if (elapsed >= targetSec && !st.fired){
-      st.fired = true; saveTimers(); playChime();
-    }
-    if (elapsed < targetSec && st.fired){
-      st.fired = false; saveTimers();
+    const st=timers[t.id]; if (!st) continue;
+    const targetSec=(+t.target||0)*60;
+    const elapsed = st.running ? st.sec + Math.floor((Date.now()-st.start)/1000) : st.sec;
+
+    if (targetSec>0 && elapsed>=targetSec){
+      if (!st.fired) startAlarm(dayKey, t.id); // start & mark fired
+      // if user had stopped manually earlier (fired==true but not ringing), do nothing
+    } else {
+      // below target → stop alarm (if any) and re-arm
+      if (st.ringing) stopAlarm(dayKey, t.id, false);
+      if (st.fired) { st.fired=false; saveTimers(); }
     }
   }
 }
 
-/* ================== DAY FORM ================== */
+/* ======== DAY FORM ======== */
 function renderTasksForDay(){
-  taskList.innerHTML = "";
-  const dayKey = datePick.value;
-  const day = store.days[dayKey] || { tasks:{}, mins:{} };
-  note.value = day.note || "";
-
-  // seed timers for this day
-  getDayTimers(dayKey);
+  taskList.innerHTML="";
+  const dayKey=datePick.value;
+  const day=store.days[dayKey]||{tasks:{},mins:{}};
+  note.value=day.note||"";
+  getDayTimers(dayKey); // seed
 
   for (const t of cfg.tasks){
-    const percVal = day.tasks?.[t.id] ?? "";
-    const minsVal = day.mins?.[t.id] ?? "";
-    const row = document.createElement("div");
-    row.className = "taskrow";
-    row.dataset.task = t.id;
-    row.innerHTML = `
+    const percVal=day.tasks?.[t.id]??"";
+    const minsVal=day.mins?.[t.id]??"";
+    const row=document.createElement("div");
+    row.className="taskrow"; row.dataset.task=t.id;
+    row.innerHTML=`
       <span>${t.name} <span class="muted">(${fmt2(t.weight*100)}%) • target ${t.target||0}m</span></span>
       <div class="timechip" id="time-${t.id}">00:00:00</div>
       <button id="btn-${t.id}" data-task="${t.id}">Start</button>
       <input type="number" min="0" value="${minsVal}" data-task="${t.id}" data-kind="mins" placeholder="min" />
       <input type="number" min="0" max="100" value="${percVal}" data-task="${t.id}" data-kind="perc" placeholder="%" />
+      <button class="alarmBtn hidden" id="alarm-${t.id}" data-task="${t.id}" title="Stop alarm">🔔 Stop</button>
     `;
     taskList.appendChild(row);
   }
 
-  // Inputs
-  taskList.querySelectorAll("input").forEach(inp=>{
-    inp.addEventListener("input", (e)=>onTaskInput(e.target));
-  });
-
-  // Buttons
+  taskList.querySelectorAll("input").forEach(inp=> inp.addEventListener("input",(e)=>onTaskInput(e.target)));
   taskList.querySelectorAll("button[id^='btn-']").forEach(btn=>{
     btn.addEventListener("click", ()=>{
-      const dayKey = datePick.value;
-      const id = btn.dataset.task;
-      const st = getDayTimers(dayKey)[id];
-      if (st.running) stopTimer(dayKey, id);
-      else startTimer(dayKey, id);
+      const dk=datePick.value, id=btn.dataset.task, st=getDayTimers(dk)[id];
+      if (st.running) stopTimer(dk,id); else startTimer(dk,id);
     });
   });
+  taskList.querySelectorAll(".alarmBtn").forEach(btn=>{
+    btn.addEventListener("click", ()=> stopAlarm(datePick.value, btn.dataset.task, true));
+  });
 
-  updateTimerUI();
-  syncMinutesFromTimers(); // fill minutes from timers on open
-  checkAlarms(dayKey);
+  updateTimerUI(); syncMinutesFromTimers(); checkAlarms(dayKey);
 }
 
 function onTaskInput(el){
-  const id   = el.dataset.task;
-  const kind = el.dataset.kind;
-  const row  = el.closest(".taskrow");
-  const minsInp = row.querySelector('input[data-kind="mins"]');
-  const percInp = row.querySelector('input[data-kind="perc"]');
-  const t = cfg.tasks.find(x=>x.id===id) || { target:0 };
-  const target = +t.target || 0;
+  const id=el.dataset.task, kind=el.dataset.kind, row=el.closest(".taskrow");
+  const minsInp=row.querySelector('input[data-kind="mins"]');
+  const percInp=row.querySelector('input[data-kind="perc"]');
+  const t=cfg.tasks.find(x=>x.id===id)||{target:0}; const target=+t.target||0;
+  const st=getDayTimers(datePick.value)[id];
 
-  const st = getDayTimers(datePick.value)[id];
-
-  if (kind === "mins"){
-    const mins = +minsInp.value || 0;
-    const perc = target ? clamp((mins/target)*100, 0, 100) : 0;
-    percInp.value = Math.round(perc);
-    st.sec = Math.round(mins*60);
+  if (kind==="mins"){
+    const mins=+minsInp.value||0; const perc=target?clamp((mins/target)*100,0,100):0; percInp.value=Math.round(perc); st.sec=Math.round(mins*60);
   } else {
-    const perc = clamp(+percInp.value || 0, 0, 100);
-    const mins = target ? Math.round((perc/100)*target) : 0;
-    minsInp.value = mins || "";
-    st.sec = Math.round(mins*60);
+    const perc=clamp(+percInp.value||0,0,100); const mins=target?Math.round((perc/100)*target):0; minsInp.value=mins||""; st.sec=Math.round(mins*60);
   }
-  // re-arm if dropped below target
-  st.fired = st.sec >= (target*60) ? st.fired : false;
-  saveTimers();
-  updateTimerUI();
-  checkAlarms(datePick.value);
-  rerunAuto();
+  // dropping below target re-arms; staying above keeps 'fired' true but silences if you clicked Stop
+  if (st.sec < target*60){ st.fired=false; }
+  saveTimers(); updateTimerUI(); checkAlarms(datePick.value); rerunAuto();
 }
 
 function syncMinutesFromTimers(live=false){
-  const dayKey = datePick.value;
-  const timers = getDayTimers(dayKey);
+  const dk=datePick.value, timers=getDayTimers(dk);
   for (const t of cfg.tasks){
-    const st = timers[t.id];
-    if (!st) continue;
-    const liveSec = st.running ? st.sec + Math.floor((Date.now()-st.start)/1000) : st.sec;
-    const mins = Math.max(0, Math.round(liveSec/60));
-    const row = taskList.querySelector(`.taskrow[data-task="${t.id}"]`);
-    if (!row) continue;
-    const minsInp = row.querySelector('input[data-kind="mins"]');
-    const percInp = row.querySelector('input[data-kind="perc"]');
-    if (live || minsInp.value === "" || +minsInp.value !== mins){
+    const st=timers[t.id]; if (!st) continue;
+    const liveSec=st.running ? st.sec + Math.floor((Date.now()-st.start)/1000) : st.sec;
+    const mins=Math.max(0, Math.round(liveSec/60));
+    const row=taskList.querySelector(`.taskrow[data-task="${t.id}"]`); if (!row) continue;
+    const minsInp=row.querySelector('input[data-kind="mins"]'); const percInp=row.querySelector('input[data-kind="perc"]');
+    if (live || minsInp.value==="" || +minsInp.value!==mins){
       minsInp.value = mins ? String(mins) : "";
-      const perc = (+t.target||0) ? clamp((mins/(+t.target))*100,0,100) : 0;
-      percInp.value = Math.round(perc);
+      const perc=(+t.target||0) ? clamp((mins/(+t.target))*100,0,100) : 0; percInp.value=Math.round(perc);
     }
   }
 }
 
 function updateTimerUI(live=false){
-  const dayKey = datePick.value;
-  const timers = tstore.days[dayKey] || {};
+  const dk=datePick.value, timers=tstore.days[dk]||{};
   for (const t of cfg.tasks){
-    const el = document.getElementById(`time-${t.id}`);
-    const btn = document.getElementById(`btn-${t.id}`);
-    if (!el || !btn) continue;
-    const st = timers[t.id] || { sec:0, running:false, start:null };
-    const sec = st.running ? st.sec + Math.floor((Date.now()-st.start)/1000) : st.sec;
+    const el=$("#time-"+t.id), btn=$("#btn-"+t.id), abtn=$("#alarm-"+t.id); if (!el||!btn||!abtn) continue;
+    const st=timers[t.id]||{sec:0,running:false,start:null,ringing:false};
+    const sec=st.running ? st.sec + Math.floor((Date.now()-st.start)/1000) : st.sec;
     el.textContent = secsToHMS(sec);
     btn.textContent = st.running ? "Stop" : "Start";
     btn.style.borderColor = st.running ? "#7bd88f" : "#2a3052";
+    abtn.classList.toggle('hidden', !st.ringing);
   }
 }
 
 function gatherTaskData(){
-  const perc = {};
-  const mins = {};
+  const perc={}, mins={};
   taskList.querySelectorAll(".taskrow").forEach(row=>{
-    const id    = row.dataset.task;
-    const pVal  = +row.querySelector('input[data-kind="perc"]').value || 0;
-    const mVal  = +row.querySelector('input[data-kind="mins"]').value || 0;
-    perc[id] = pVal;
-    if (mVal>0) mins[id] = mVal;
+    const id=row.dataset.task;
+    const pVal=+row.querySelector('input[data-kind="perc"]').value||0;
+    const mVal=+row.querySelector('input[data-kind="mins"]').value||0;
+    perc[id]=pVal; if (mVal>0) mins[id]=mVal;
   });
   return { perc, mins };
 }
@@ -560,204 +470,98 @@ function rerunAuto(){
   coinOut.textContent = isNaN(eff) ? "–" : EMOJI[coinForEff(eff)];
 }
 
-/* Buttons */
+/* ======== BUTTONS ======== */
 saveBtn.addEventListener("click", ()=>{
-  const key = datePick.value;
-  if (!key) return;
-  stopAll(key); // freeze time before saving
-  const { perc, mins } = gatherTaskData();
-  const eff = weightedEfficiency(perc);
-  const coin = coinForEff(eff);
-  store.days[key] = { eff, coin, note: note.value, tasks: perc, mins: mins };
-  saveStore();
-  renderCalendar();
+  const key=datePick.value; if (!key) return;
+  stopAll(key); const { perc, mins }=gatherTaskData();
+  const eff=weightedEfficiency(perc); const coin=coinForEff(eff);
+  store.days[key]={ eff, coin, note:note.value, tasks:perc, mins:mins }; saveStore(); renderCalendar();
 });
 delBtn.addEventListener("click", ()=>{
-  const key = datePick.value;
-  stopAll(key);
-  delete store.days[key];
-  delete tstore.days[key]; saveTimers();
-  renderTasksForDay();
-  rerunAuto();
-  renderCalendar();
+  const key=datePick.value; stopAll(key); silenceAll(key);
+  delete store.days[key]; delete tstore.days[key]; saveStore(); saveTimers();
+  renderTasksForDay(); rerunAuto(); renderCalendar();
 });
 clearInputsBtn.addEventListener("click", ()=>{
-  taskList.querySelectorAll("input").forEach(inp=> inp.value = "");
-  const timers = getDayTimers(datePick.value);
-  for (const st of Object.values(timers)){ st.sec=0; st.running=false; st.start=null; st.fired=false; }
-  saveTimers();
-  updateTimerUI();
-  rerunAuto();
+  taskList.querySelectorAll("input").forEach(inp=> inp.value="");
+  const timers=getDayTimers(datePick.value);
+  for (const st of Object.values(timers)){ st.sec=0; st.running=false; st.start=null; st.fired=false; st.ringing=false; }
+  silenceAll(datePick.value); saveTimers(); updateTimerUI(); rerunAuto();
 });
 stopAllBtn.addEventListener("click", ()=> stopAll(datePick.value));
+silenceAllBtn.addEventListener("click", ()=> silenceAll(datePick.value));
 
-/* ================== CALENDAR / MONTH SUMMARY ================== */
-function monthMeta(ymStr){
-  const [Y,M] = ymStr.split("-").map(Number);
-  const first = new Date(Y, M-1, 1);
-  const startW = first.getDay();
-  const days = new Date(Y, M, 0).getDate();
-  return { Y, M, first, startW, days };
-}
-
+/* ======== CALENDAR ======== */
+function monthMeta(ymStr){ const [Y,M]=ymStr.split("-").map(Number); const first=new Date(Y,M-1,1); const startW=first.getDay(); const days=new Date(Y,M,0).getDate(); return {Y,M,first,startW,days}; }
 function renderCalendar(){
-  const mval = monthPick.value;
-  const { Y, M, startW, days } = monthMeta(mval);
-  monthTitle.textContent = new Date(Y, M-1).toLocaleString(undefined, { month:"long", year:"numeric" });
-
-  calGrid.innerHTML = "";
-  for (let i=0;i<startW;i++){
-    const d = document.createElement("div");
-    d.className = "day ghost";
-    calGrid.appendChild(d);
-  }
+  const mval=monthPick.value; const {Y,M,startW,days}=monthMeta(mval);
+  monthTitle.textContent=new Date(Y,M-1).toLocaleString(undefined,{month:"long",year:"numeric"});
+  calGrid.innerHTML=""; for (let i=0;i<startW;i++){ const d=document.createElement("div"); d.className="day ghost"; calGrid.appendChild(d); }
   for (let d=1; d<=days; d++){
-    const key = `${mval}-${String(d).padStart(2,"0")}`;
-    const info = store.days[key];
-    const el = document.createElement("div");
-    el.className = "day";
-    el.innerHTML = `
-      <div class="dnum">${d}</div>
-      <div class="coin">${info ? EMOJI[info.coin] : "·"}</div>
-    `;
-    el.addEventListener("click", ()=>{
-      datePick.value = key;
-      renderTasksForDay();
-      rerunAuto();
-      window.scrollTo({ top:0, behavior:"smooth" });
-    });
+    const key=`${mval}-${String(d).padStart(2,"0")}`; const info=store.days[key];
+    const el=document.createElement("div"); el.className="day";
+    el.innerHTML=`<div class="dnum">${d}</div><div class="coin">${info?EMOJI[info.coin]:"·"}</div>`;
+    el.addEventListener("click", ()=>{ datePick.value=key; renderTasksForDay(); rerunAuto(); window.scrollTo({top:0,behavior:"smooth"}); });
     calGrid.appendChild(el);
   }
-
-  let b=0,s=0,g=0, ptsSum=0, n=0;
-  let bestStreak = 0, cur = 0;
+  let b=0,s=0,g=0, ptsSum=0, n=0, bestStreak=0, cur=0;
   for (let d=1; d<=days; d++){
-    const key = `${mval}-${String(d).padStart(2,"0")}`;
-    const info = store.days[key];
-    if (!info) { cur = 0; continue; }
-    if (info.coin==="bronze") b++;
-    if (info.coin==="silver") s++;
-    if (info.coin==="gold")   g++;
-    ptsSum += PTS[info.coin]; n++;
-    if (info.coin==="silver" || info.coin==="gold") { cur++; bestStreak = Math.max(bestStreak, cur); }
-    else cur = 0;
+    const key=`${mval}-${String(d).padStart(2,"0")}`, info=store.days[key]; if (!info){ cur=0; continue; }
+    if (info.coin==="bronze") b++; if (info.coin==="silver") s++; if (info.coin==="gold") g++;
+    ptsSum += PTS[info.coin]; n++; if (info.coin==="silver"||info.coin==="gold"){ cur++; bestStreak=Math.max(bestStreak,cur);} else cur=0;
   }
-  cBronze.textContent = b; cSilver.textContent = s; cGold.textContent = g;
-
-  const avg = n ? (ptsSum/n) : 0;
-  avgPts.textContent = fmt2(avg);
-  streakEl.textContent = bestStreak;
-
-  let monthResult = null, explain = "";
-  const maxCount = Math.max(b,s,g);
-  const winners = [];
-  if (b===maxCount) winners.push("bronze");
-  if (s===maxCount) winners.push("silver");
-  if (g===maxCount) winners.push("gold");
-  if (winners.length===1) { monthResult = winners[0]; explain = "Dominant coin by count."; }
-  else {
-    if (avg >= 2.5) monthResult = "gold";
-    else if (avg >= 1.75) monthResult = "silver";
-    else monthResult = "bronze";
-    explain = "Tie → resolved by average points.";
-  }
-  monthCoin.textContent = n ? EMOJI[monthResult] : "–";
-  monthExplain.textContent = n ? explain : "No data this month.";
+  cBronze.textContent=b; cSilver.textContent=s; cGold.textContent=g;
+  const avg=n?(ptsSum/n):0; avgPts.textContent=fmt2(avg); streakEl.textContent=bestStreak;
+  let monthResult=null, explain=""; const maxCount=Math.max(b,s,g); const winners=[]; if(b===maxCount)winners.push("bronze"); if(s===maxCount)winners.push("silver"); if(g===maxCount)winners.push("gold");
+  if (winners.length===1){ monthResult=winners[0]; explain="Dominant coin by count."; }
+  else { if (avg>=2.5) monthResult="gold"; else if (avg>=1.75) monthResult="silver"; else monthResult="bronze"; explain="Tie → resolved by average points."; }
+  monthCoin.textContent=n?EMOJI[monthResult]:"–"; monthExplain.textContent=n?explain:"No data this month.";
 }
-
-prevMonthBtn.addEventListener("click", ()=>{
-  const { Y, M } = monthMeta(monthPick.value);
-  const prev = new Date(Y, M-2, 1);
-  monthPick.value = ym(prev);
-  renderCalendar();
-});
-nextMonthBtn.addEventListener("click", ()=>{
-  const { Y, M } = monthMeta(monthPick.value);
-  const next = new Date(Y, M, 1);
-  monthPick.value = ym(next);
-  renderCalendar();
-});
+prevMonthBtn.addEventListener("click", ()=>{ const {Y,M}=monthMeta(monthPick.value); const prev=new Date(Y,M-2,1); monthPick.value=ym(prev); renderCalendar(); });
+nextMonthBtn.addEventListener("click", ()=>{ const {Y,M}=monthMeta(monthPick.value); const next=new Date(Y,M,1); monthPick.value=ym(next); renderCalendar(); });
 monthPick.addEventListener("input", renderCalendar);
-datePick.addEventListener("input", ()=>{
-  renderTasksForDay(); rerunAuto(); resetTick(); checkAlarms(datePick.value);
-});
+datePick.addEventListener("input", ()=>{ silenceAllAcrossDays(); renderTasksForDay(); rerunAuto(); resetTick(); checkAlarms(datePick.value); });
 
-/* ================== CONFIG UI ================== */
+/* ======== CONFIG UI ======== */
 function renderCfg(){
-  thBronze.value = cfg.thresholds.BRONZE_MAX;
-  thSilver.value = cfg.thresholds.SILVER_MAX;
-  thGold.value   = cfg.thresholds.GOLD_MIN;
-
-  cfgTasks.innerHTML = "";
+  thBronze.value=cfg.thresholds.BRONZE_MAX; thSilver.value=cfg.thresholds.SILVER_MAX; thGold.value=cfg.thresholds.GOLD_MIN;
+  cfgTasks.innerHTML="";
   for (const t of cfg.tasks){
-    const row = document.createElement("div");
-    row.className = "taskcfgrow";
-    row.innerHTML = `
-      <input type="text" value="${t.name}" data-id="${t.id}" data-k="name" />
+    const row=document.createElement("div"); row.className="taskcfgrow";
+    row.innerHTML=`<input type="text" value="${t.name}" data-id="${t.id}" data-k="name" />
       <input type="text" value="${t.id}" data-id="${t.id}" data-k="id" />
       <input type="number" step="0.05" value="${+t.weight||0}" data-id="${t.id}" data-k="weight" />
-      <input type="number" step="5" value="${+t.target||0}" data-id="${t.id}" data-k="target" />
-    `;
+      <input type="number" step="5" value="${+t.target||0}" data-id="${t.id}" data-k="target" />`;
     cfgTasks.appendChild(row);
   }
   cfgTasks.querySelectorAll("input").forEach(inp=>{
-    inp.addEventListener("input", (e)=>{
-      const id = e.target.dataset.id;
-      const k  = e.target.dataset.k;
-      const v  = e.target.value;
-      const idx = cfg.tasks.findIndex(x=>x.id===id);
-      if (idx>=0){
-        if (k==="weight") cfg.tasks[idx][k] = +v;
-        else if (k==="target") cfg.tasks[idx][k] = Math.max(0, +v|0);
-        else cfg.tasks[idx][k] = v;
-      }
+    inp.addEventListener("input",(e)=>{
+      const id=e.target.dataset.id, k=e.target.dataset.k, v=e.target.value;
+      const idx=cfg.tasks.findIndex(x=>x.id===id); if (idx<0) return;
+      if (k==="weight") cfg.tasks[idx][k]=+v; else if (k==="target") cfg.tasks[idx][k]=Math.max(0,+v|0); else cfg.tasks[idx][k]=v;
     });
   });
 }
-addTaskBtn.addEventListener("click", ()=>{
-  const newid = "task"+Math.random().toString(36).slice(2,7);
-  cfg.tasks.push({ id:newid, name:"New Task", weight:0.1, target:30 });
-  renderCfg();
-});
-saveCfgBtn.addEventListener("click", ()=>{
-  const b = +thBronze.value, s = +thSilver.value, g = +thGold.value;
-  cfg.thresholds = {
-    BRONZE_MAX: clamp(b,0,98),
-    SILVER_MAX: clamp(s, Math.max(b+1,1), 99),
-    GOLD_MIN:   clamp(g, Math.max(s+1,2), 100)
-  };
-  cfg.tasks = normalizeWeights(cfg.tasks);
-  saveCfg();
-  renderTasksForDay(); rerunAuto(); renderCalendar();
+addTaskBtn.addEventListener("click", ()=>{ const newid="task"+Math.random().toString(36).slice(2,7); cfg.tasks.push({id:newid,name:"New Task",weight:0.1,target:30}); renderCfg(); });
+saveCfgBtn.addEventListener("click", ()=>{ const b=+thBronze.value, s=+thSilver.value, g=+thGold.value;
+  cfg.thresholds={ BRONZE_MAX:clamp(b,0,98), SILVER_MAX:clamp(s,Math.max(b+1,1),99), GOLD_MIN:clamp(g,Math.max(s+1,2),100) };
+  cfg.tasks=normalizeWeights(cfg.tasks); saveCfg(); renderTasksForDay(); rerunAuto(); renderCalendar();
 });
 
-/* ================== IMPORT / EXPORT ================== */
+/* ======== IMPORT / EXPORT ======== */
 exportBtn.addEventListener("click", ()=>{
-  stopAll(datePick.value); // snapshot times
-  const payload = { cfg, store, timers: tstore };
-  const blob = new Blob([JSON.stringify(payload,null,2)], { type:"application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = "daily-coins-backup.json"; a.click();
-  URL.revokeObjectURL(url);
+  stopAll(datePick.value); const payload={ cfg, store, timers:tstore };
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob);
+  const a=document.createElement("a"); a.href=url; a.download="daily-coins-backup.json"; a.click(); URL.revokeObjectURL(url);
 });
-document.querySelector("label input#importFile").addEventListener("change", (e)=>{
-  const f = e.target.files?.[0]; if (!f) return;
-  const r = new FileReader();
-  r.onload = () => {
-    try {
-      const data = JSON.parse(r.result);
-      if (data.cfg) cfg = { thresholds: DEFAULT_THRESHOLDS, tasks: DEFAULT_TASKS, ...data.cfg,
-        tasks:(data.cfg.tasks||DEFAULT_TASKS).map(t=>({ target:60, ...t }))
-      };
-      if (data.store) store = data.store;
-      if (data.timers) tstore = data.timers;
-      saveCfg(); saveStore(); saveTimers();
-      renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); updateTimerUI(); checkAlarms(datePick.value);
-      alert("Imported successfully.");
-    } catch(err){ alert("Invalid JSON file."); }
-  };
-  r.readAsText(f);
+document.querySelector("label input#importFile").addEventListener("change",(e)=>{
+  const f=e.target.files?.[0]; if(!f) return;
+  const r=new FileReader(); r.onload=()=>{ try{
+    const data=JSON.parse(r.result);
+    if (data.cfg) cfg={ thresholds:DEFAULT_THRESHOLDS, tasks:DEFAULT_TASKS, ...data.cfg, tasks:(data.cfg.tasks||DEFAULT_TASKS).map(t=>({target:60,...t})) };
+    if (data.store) store=data.store; if (data.timers) tstore=data.timers;
+    saveCfg(); saveStore(); saveTimers(); renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); updateTimerUI(); checkAlarms(datePick.value); alert("Imported successfully.");
+  }catch(err){ alert("Invalid JSON file."); } }; r.readAsText(f);
 });
 </script>
 </body>
