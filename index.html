@@ -11,7 +11,7 @@
   header, footer { padding:12px 16px; display:flex; gap:10px; align-items:center; justify-content:space-between; }
   header h1 { margin:0; font-size:18px; letter-spacing:.2px; }
   .wrap { max-width:1000px; margin:0 auto; padding:16px; display:grid; grid-template-columns:360px 1fr; gap:16px; }
-  .card { background:var(--card); border-radius:12px; padding:14px; box-shadow:0 0 0 1px rgba(255,255,255,.05) inset; overflow-x:auto; } /* allow horizontal scroll if needed */
+  .card { background:var(--card); border-radius:12px; padding:14px; box-shadow:0 0 0 1px rgba(255,255,255,.05) inset; overflow-x:auto; }
   .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   label { font-size:13px; color:var(--muted); }
   input, select, textarea, button { background:#12162a; border:1px solid #2a3052; color:var(--ink); padding:8px 10px; border-radius:8px; }
@@ -28,7 +28,6 @@
   .stat { font-size:13px; color:var(--muted); }
   .big { font-size:28px; font-weight:700; }
   .muted { color:var(--muted); }
-  /* Task row: name | timer | start/stop | minutes | percent */
   .taskrow { display:grid; grid-template-columns:1fr 88px 90px 86px 72px; gap:8px; align-items:center; margin-bottom:6px; min-width:620px; }
   .taskrow span { font-size:13px; }
   .timechip { font-variant-numeric:tabular-nums; text-align:center; padding:6px 8px; border:1px solid #2a3052; border-radius:8px; background:#12162a; min-width:84px; }
@@ -39,7 +38,6 @@
   .center { text-align:center; }
   .right { text-align:right; }
   .hidden { display:none !important; }
-  /* Config task row: name | id | weight | target minutes */
   .taskcfgrow { display:grid; grid-template-columns:1fr 140px 90px 120px; gap:8px; align-items:center; margin-bottom:6px; }
 </style>
 </head>
@@ -60,17 +58,10 @@
 </header>
 
 <div class="wrap">
-  <!-- Left: Day editor -->
   <section class="card">
     <div class="row" style="justify-content:space-between">
-      <div>
-        <label>Date</label><br/>
-        <input type="date" id="datePick" />
-      </div>
-      <div>
-        <label>Month</label><br/>
-        <input type="month" id="monthPick" />
-      </div>
+      <div><label>Date</label><br/><input type="date" id="datePick" /></div>
+      <div><label>Month</label><br/><input type="month" id="monthPick" /></div>
     </div>
 
     <div class="sep"></div>
@@ -79,9 +70,7 @@
       <div>
         <label>Tasks for today</label>
         <div id="taskList"></div>
-        <div class="kicker">
-          Set each task’s <b>Target (min)</b> in ⚙️ Configure. Start/Stop timer to auto-fill minutes (percent syncs).
-        </div>
+        <div class="kicker">Set each task’s <b>Target (min)</b> in ⚙️ Configure. Start/Stop timer to auto-fill minutes (percent syncs).</div>
       </div>
       <div class="row">
         <button id="stopAllBtn" title="Stop all running timers">Stop All</button>
@@ -131,7 +120,6 @@
     </details>
   </section>
 
-  <!-- Right: Month view -->
   <section class="card">
     <div class="row" style="justify-content:space-between">
       <div class="row">
@@ -151,21 +139,10 @@
     <div class="sep"></div>
 
     <div class="summary">
-      <div class="card">
-        <div class="stat">Monthly Average Points</div>
-        <div class="big" id="avgPts">0.00</div>
-      </div>
-      <div class="card">
-        <div class="stat">Longest Streak (≥Silver)</div>
-        <div class="big" id="streak">0</div>
-      </div>
-      <div class="card center">
-        <div class="stat">Overall Month</div>
-        <div class="big" id="monthCoin">–</div>
-        <div class="muted" id="monthExplain"></div>
-      </div>
+      <div class="card"><div class="stat">Monthly Average Points</div><div class="big" id="avgPts">0.00</div></div>
+      <div class="card"><div class="stat">Longest Streak (≥Silver)</div><div class="big" id="streak">0</div></div>
+      <div class="card center"><div class="stat">Overall Month</div><div class="big" id="monthCoin">–</div><div class="muted" id="monthExplain"></div></div>
     </div>
-
   </section>
 </div>
 
@@ -183,25 +160,48 @@ const DEFAULT_TASKS = [
   { id:"recall",  name:"Night Recall",                weight:0.2, target:30  },
 ];
 const DEFAULT_THRESHOLDS = { BRONZE_MAX:59, SILVER_MAX:84, GOLD_MIN:85 };
-const ALARM_REPEAT_MS = 5000; // repeat interval for ringing
+const ALARM_REPEAT_MS = 5000;
 
 const PTS   = { bronze:1, silver:2, gold:3 };
 const EMOJI = { bronze:"🥉", silver:"🥈", gold:"🥇" };
 
 /* ================== STATE & STORAGE ================== */
-const SKEY   = "dailyCoins.v1";       // days data
-const SKCFG  = "dailyCoinsCfg.v1";    // tasks + thresholds
-const SKTMR  = "dailyCoinsTimers.v2"; // timers (sec, running, start, fired, ringing)
+const SKEY   = "dailyCoins.v1";
+const SKCFG  = "dailyCoinsCfg.v1";
+const SKTMR  = "dailyCoinsTimers.v2";
 
 let cfg   = loadCfg();
 let store = loadStore();
 let tstore = loadTimers();
 let tickHandle = null;
 
-/* ======== SOUND (WebAudio) ======== */
+/* ======== SOUND (WebAudio) + PRIMING ======== */
 let audioCtx = null;
 let soundEnabled = false;
+let audioPrimed = false;
+
 function initAudio(){ if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+
+function primeAudioOnce(){
+  if (audioPrimed) return;
+  audioPrimed = true;
+  try {
+    initAudio();
+    audioCtx.resume();
+    // silent blip so browsers mark context as user-initiated
+    const o = audioCtx.createOscillator();
+    const g = audioCtx.createGain();
+    g.gain.value = 0.0001;
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + 0.05);
+  } catch(e){}
+}
+
+// prime on first interaction anywhere
+['pointerdown','keydown','touchstart'].forEach(ev =>
+  window.addEventListener(ev, primeAudioOnce, { once:true, capture:true })
+);
+
 function playChime(){
   if (!soundEnabled) return;
   try { initAudio(); audioCtx.resume(); } catch(e){}
@@ -228,11 +228,7 @@ function loadCfg(){
 function saveCfg(){ localStorage.setItem(SKCFG, JSON.stringify(cfg)); }
 function loadStore(){ const s = localStorage.getItem(SKEY); if (s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKEY,JSON.stringify(seeded)); return seeded; }
 function saveStore(){ localStorage.setItem(SKEY, JSON.stringify(store)); }
-function loadTimers(){
-  const s = localStorage.getItem(SKTMR);
-  if (s) return JSON.parse(s);
-  const seeded = { days:{} }; localStorage.setItem(SKTMR, JSON.stringify(seeded)); return seeded;
-}
+function loadTimers(){ const s = localStorage.getItem(SKTMR); if (s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKTMR, JSON.stringify(seeded)); return seeded; }
 function saveTimers(){ localStorage.setItem(SKTMR, JSON.stringify(tstore)); }
 
 /* ======== HELPERS ======== */
@@ -251,8 +247,12 @@ function weightedEfficiency(taskPercents){ const tasks=normalizeWeights(cfg.task
 const soundToggle=$("#soundToggle"), testSoundBtn=$("#testSoundBtn");
 soundEnabled = localStorage.getItem('dailyCoins.sound')==='1';
 if (soundToggle) soundToggle.checked = soundEnabled;
-soundToggle?.addEventListener('change', ()=>{ soundEnabled=soundToggle.checked; localStorage.setItem('dailyCoins.sound',soundEnabled?'1':'0'); if (soundEnabled){ initAudio(); audioCtx.resume(); playChime(); }});
-testSoundBtn?.addEventListener('click', ()=>{ soundEnabled=true; localStorage.setItem('dailyCoins.sound','1'); if (soundToggle) soundToggle.checked=true; initAudio(); audioCtx.resume(); playChime(); });
+soundToggle?.addEventListener('change', ()=>{
+  soundEnabled = soundToggle.checked;
+  localStorage.setItem('dailyCoins.sound', soundEnabled ? '1' : '0');
+  if (soundEnabled){ primeAudioOnce(); playChime(); }
+});
+testSoundBtn?.addEventListener('click', ()=>{ soundEnabled=true; localStorage.setItem('dailyCoins.sound','1'); if (soundToggle) soundToggle.checked=true; primeAudioOnce(); playChime(); });
 
 /* ======== DOM REFS ======== */
 const datePick=$("#datePick"), monthPick=$("#monthPick"), taskList=$("#taskList");
@@ -355,9 +355,8 @@ function checkAlarms(dayKey){
     const elapsed = st.running ? st.sec + Math.floor((Date.now()-st.start)/1000) : st.sec;
 
     if (targetSec>0 && elapsed>=targetSec){
-      if (!st.fired) startAlarm(dayKey, t.id); // start & mark fired
+      if (!st.fired) startAlarm(dayKey, t.id);
     } else {
-      // below target → stop alarm (if any) and re-arm
       if (st.ringing) stopAlarm(dayKey, t.id, false);
       if (st.fired) { st.fired=false; saveTimers(); }
     }
@@ -370,7 +369,7 @@ function renderTasksForDay(){
   const dayKey=datePick.value;
   const day=store.days[dayKey]||{tasks:{},mins:{}};
   note.value=day.note||"";
-  getDayTimers(dayKey); // seed
+  getDayTimers(dayKey);
 
   for (const t of cfg.tasks){
     const percVal=day.tasks?.[t.id]??"";
@@ -387,19 +386,17 @@ function renderTasksForDay(){
     taskList.appendChild(row);
   }
 
-  // Inputs
   taskList.querySelectorAll("input").forEach(inp=> inp.addEventListener("input",(e)=>onTaskInput(e.target)));
 
   // Main button: Start/Stop or 🔔 Stop if ringing
   taskList.querySelectorAll("button[id^='btn-']").forEach(btn=>{
     btn.addEventListener("click", ()=>{
+      primeAudioOnce(); // <-- unlock audio on first tap
       const dayKey = datePick.value;
       const id = btn.dataset.task;
       const st = getDayTimers(dayKey)[id];
 
-      // If alarm is ringing, clicking the main button stops the alarm
       if (st.ringing) { stopAlarm(dayKey, id, true); return; }
-
       if (st.running) stopTimer(dayKey, id);
       else startTimer(dayKey, id);
     });
@@ -420,7 +417,7 @@ function onTaskInput(el){
   } else {
     const perc=clamp(+percInp.value||0,0,100); const mins=target?Math.round((perc/100)*target):0; minsInp.value=mins||""; st.sec=Math.round(mins*60);
   }
-  if (st.sec < target*60){ st.fired=false; } // re-arm if below target
+  if (st.sec < target*60){ st.fired=false; }
   saveTimers(); updateTimerUI(); checkAlarms(datePick.value); rerunAuto();
 }
 
@@ -498,8 +495,8 @@ clearInputsBtn.addEventListener("click", ()=>{
   for (const st of Object.values(timers)){ st.sec=0; st.running=false; st.start=null; st.fired=false; st.ringing=false; }
   silenceAll(datePick.value); saveTimers(); updateTimerUI(); rerunAuto();
 });
-stopAllBtn.addEventListener("click", ()=> stopAll(datePick.value));
-silenceAllBtn.addEventListener("click", ()=> silenceAll(datePick.value));
+stopAllBtn.addEventListener("click", ()=>{ primeAudioOnce(); stopAll(datePick.value); });
+silenceAllBtn.addEventListener("click", ()=>{ primeAudioOnce(); silenceAll(datePick.value); });
 
 /* ======== CALENDAR ======== */
 function monthMeta(ymStr){ const [Y,M]=ymStr.split("-").map(Number); const first=new Date(Y,M-1,1); const startW=first.getDay(); const days=new Date(Y,M,0).getDate(); return {Y,M,first,startW,days}; }
@@ -559,7 +556,8 @@ saveCfgBtn.addEventListener("click", ()=>{ const b=+thBronze.value, s=+thSilver.
 });
 
 /* ======== IMPORT / EXPORT ======== */
-exportBtn.addEventListener("click", ()=>{
+const exportBtnEl=document.getElementById('exportBtn');
+exportBtnEl.addEventListener("click", ()=>{
   stopAll(datePick.value); const payload={ cfg, store, timers:tstore };
   const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"}); const url=URL.createObjectURL(blob);
   const a=document.createElement("a"); a.href=url; a.download="daily-coins-backup.json"; a.click(); URL.revokeObjectURL(url);
