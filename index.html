@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Daily Coins – Bronze / Silver / Gold</title>
 <style>
-  :root { --bg:#0f1220; --card:#181c2f; --ink:#eef1ff; --muted:#9aa3c7; --accent:#6ca8ff; }
+  :root { --bg:#0f1220; --card:#181c2f; --ink:#eef1ff; --muted:#9aa3c7; --accent:#6ca8ff; --ok:#7bd88f; --warn:#ffd166; --bad:#ff7575; }
   * { box-sizing:border-box; }
   body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,Ubuntu,"Helvetica Neue",Arial; background:var(--bg); color:var(--ink); }
   header, footer { padding:12px 16px; display:flex; gap:10px; align-items:center; justify-content:space-between; }
@@ -15,7 +15,7 @@
   .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
   label { font-size:13px; color:var(--muted); }
   input, select, textarea, button { background:#12162a; border:1px solid #2a3052; color:var(--ink); padding:8px 10px; border-radius:8px; }
-  input[type="number"] { width:90px; }
+  input[type="number"] { width:78px; }
   button { cursor:pointer; }
   button.primary { background:linear-gradient(180deg,#2f67ff,#2149c8); border:none; }
   .grid { display:grid; grid-template-columns:repeat(7,1fr); gap:8px; }
@@ -28,11 +28,11 @@
   .stat { font-size:13px; color:var(--muted); }
   .big { font-size:28px; font-weight:700; }
   .muted { color:var(--muted); }
-  /* Day-task row: label | minutes | percent */
-  .taskrow { display:grid; grid-template-columns:1fr 90px 90px; gap:8px; align-items:center; margin-bottom:6px; }
+  /* Task row: name | timer | start/stop | minutes | percent */
+  .taskrow { display:grid; grid-template-columns:1fr 88px 90px 86px 72px; gap:8px; align-items:center; margin-bottom:6px; }
   .taskrow span { font-size:13px; }
+  .timechip { font-variant-numeric:tabular-nums; text-align:center; padding:6px 8px; border:1px solid #2a3052; border-radius:8px; background:#12162a; min-width:84px; }
   .sep { height:1px; background:#2a3052; margin:10px 0; opacity:.6 }
-  .toolbar { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
   .note { width:100%; min-height:70px; }
   .kicker { font-size:12px; color:var(--muted); margin-top:-6px; }
   .linkish { color:var(--accent); text-decoration:underline; cursor:pointer; }
@@ -71,12 +71,17 @@
 
     <div class="sep"></div>
 
-    <div>
-      <label>Tasks for today</label>
-      <div id="taskList"></div>
-      <div class="kicker">
-        Enter <b>minutes</b> (auto-converts to %) or enter % directly. We compare to each task’s <b>target minutes</b>.
-        Hitting 100% of targets → high efficiency → 🥇 by thresholds.
+    <div class="row" style="justify-content:space-between">
+      <div>
+        <label>Tasks for today</label>
+        <div id="taskList"></div>
+        <div class="kicker">
+          Set each task’s <b>Target (min)</b> in ⚙️ Configure. Start/Stop timer to auto-fill minutes (percent syncs).
+        </div>
+      </div>
+      <div class="row">
+        <button id="stopAllBtn" title="Stop all running timers">Stop All</button>
+        <button id="clearInputsBtn" title="Clear inputs">Clear</button>
       </div>
     </div>
 
@@ -92,7 +97,7 @@
       </div>
       <div class="row">
         <button id="saveBtn" class="primary">Save Day</button>
-        <button id="deleteBtn" title="Clear this day">Clear</button>
+        <button id="deleteBtn" title="Clear this day">Delete</button>
       </div>
     </div>
 
@@ -105,7 +110,7 @@
 
     <details>
       <summary>⚙️ Configure (tasks, weights, thresholds)</summary>
-      <div class="kicker">Weights should sum ≈ 1.0 (we normalize if not). Set a daily <b>target minutes</b> for each task.</div>
+      <div class="kicker">Weights should sum ≈ 1.0 (we normalize). Set a daily <b>Target minutes</b> for timers.</div>
       <div class="row muted" style="gap:16px;margin:6px 0 4px 0;">
         <span style="width:100%;font-size:12px">Columns: Name | ID | Weight (0–1) | Target minutes</span>
       </div>
@@ -166,32 +171,34 @@
 
 <script>
 /* ================== CONFIG ================== */
-// Now each task has a daily time target in minutes.
 const DEFAULT_TASKS = [
-  { id: "study",    name: "Study / Deep Work", weight: 0.4, target: 120 },
-  { id: "practice", name: "Math Practice",     weight: 0.2, target: 60  },
-  { id: "reinforce",name: "Day Reinforcing",   weight: 0.2, target: 45  },
-  { id: "recall",   name: "Night Recall",      weight: 0.2, target: 20  },
+  { id:"study",   name:"memorisation",                weight:0.4, target:120 },
+  { id:"math",    name:"Math Practice",               weight:0.2, target:60  },
+  { id:"rein",    name:"Throughout day Reinforcing",  weight:0.2, target:45  },
+  { id:"recall",  name:"Night Recall",                weight:0.2, target:30  },
 ];
-// Thresholds remain global and apply to the final (weighted) efficiency %
-const DEFAULT_THRESHOLDS = { BRONZE_MAX: 59, SILVER_MAX: 84, GOLD_MIN: 85 };
+const DEFAULT_THRESHOLDS = { BRONZE_MAX:59, SILVER_MAX:84, GOLD_MIN:85 };
 
 const PTS   = { bronze:1, silver:2, gold:3 };
 const EMOJI = { bronze:"🥉", silver:"🥈", gold:"🥇" };
 
 /* ================== STATE & STORAGE ================== */
-const SKEY  = "dailyCoins.v1";
-const SKCFG = "dailyCoinsCfg.v1"; // tasks + thresholds
+const SKEY   = "dailyCoins.v1";       // days data
+const SKCFG  = "dailyCoinsCfg.v1";    // tasks + thresholds
+const SKTMR  = "dailyCoinsTimers.v1"; // per-day timer runtime (seconds)
 
-let cfg = loadCfg();
+let cfg   = loadCfg();
 let store = loadStore();
+let tstore = loadTimers();
+
+// one interval to tick all running timers
+let tickHandle = null;
 
 function loadCfg(){
   const c = localStorage.getItem(SKCFG);
   if (c) {
     const obj = JSON.parse(c);
-    // Back-compat: seed 'target' if missing
-    obj.tasks = obj.tasks.map(t => ({ target: 60, ...t }));
+    obj.tasks = (obj.tasks||[]).map(t => ({ target:60, ...t }));
     return obj;
   }
   const seeded = { tasks: DEFAULT_TASKS, thresholds: DEFAULT_THRESHOLDS };
@@ -203,11 +210,20 @@ function saveCfg(){ localStorage.setItem(SKCFG, JSON.stringify(cfg)); }
 function loadStore(){
   const s = localStorage.getItem(SKEY);
   if (s) return JSON.parse(s);
-  const seeded = { days: {} }; // key: YYYY-MM-DD -> { eff, coin, note, tasks:{id:percent}, mins:{id:minutes} }
+  const seeded = { days:{} };
   localStorage.setItem(SKEY, JSON.stringify(seeded));
   return seeded;
 }
 function saveStore(){ localStorage.setItem(SKEY, JSON.stringify(store)); }
+
+function loadTimers(){
+  const s = localStorage.getItem(SKTMR);
+  if (s) return JSON.parse(s);
+  const seeded = { days:{} }; // { "YYYY-MM-DD": { [taskId]: {sec:0, running:false, start:null} } }
+  localStorage.setItem(SKTMR, JSON.stringify(seeded));
+  return seeded;
+}
+function saveTimers(){ localStorage.setItem(SKTMR, JSON.stringify(tstore)); }
 
 /* ================== HELPERS ================== */
 const $ = (q) => document.querySelector(q);
@@ -215,55 +231,60 @@ const fmt2 = (n) => (Math.round(n*100)/100).toFixed(2);
 function ymd(d){ return d.toISOString().slice(0,10); }
 function ym(d){ return d.toISOString().slice(0,7); }
 function clamp(n,min,max){ return Math.max(min, Math.min(max, n)); }
+function pad2(n){ return String(n).padStart(2,"0"); }
+function secsToHMS(s){
+  const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), ss = Math.floor(s%60);
+  return `${pad2(h)}:${pad2(m)}:${pad2(ss)}`;
+}
 
 function normalizeWeights(tasks){
   const sum = tasks.reduce((a,t)=>a+(+t.weight||0),0) || 1;
-  return tasks.map(t => ({...t, weight: (+t.weight||0)/sum }));
+  return tasks.map(t => ({...t, weight:(+t.weight||0)/sum }));
 }
-
 function coinForEff(eff){
   const { BRONZE_MAX, SILVER_MAX, GOLD_MIN } = cfg.thresholds;
   if (eff >= GOLD_MIN) return "gold";
   if (eff <= BRONZE_MAX) return "bronze";
   return "silver";
 }
-
-function weightedEfficiency(taskPercents){ // object: id -> 0..100
+function weightedEfficiency(taskPercents){
   const tasks = normalizeWeights(cfg.tasks);
   let acc = 0;
   for (const t of tasks){
     const p = clamp(+taskPercents[t.id] || 0, 0, 100);
-    acc += (p/100) * t.weight * 100; // keep as %
+    acc += (p/100) * t.weight * 100;
   }
   return clamp(acc, 0, 100);
 }
 
 /* ================== UI BINDINGS ================== */
-const datePick   = $("#datePick");
-const monthPick  = $("#monthPick");
-const taskList   = $("#taskList");
-const effOut     = $("#effOut");
-const coinOut    = $("#coinOut");
-const note       = $("#note");
-const saveBtn    = $("#saveBtn");
-const delBtn     = $("#deleteBtn");
-const calGrid    = $("#calGrid");
+const datePick = $("#datePick");
+const monthPick = $("#monthPick");
+const taskList = $("#taskList");
+const effOut = $("#effOut");
+const coinOut = $("#coinOut");
+const note = $("#note");
+const saveBtn = $("#saveBtn");
+const delBtn = $("#deleteBtn");
+const clearInputsBtn = $("#clearInputsBtn");
+const stopAllBtn = $("#stopAllBtn");
+const calGrid = $("#calGrid");
 const monthTitle = $("#monthTitle");
 const prevMonthBtn = $("#prevMonth");
 const nextMonthBtn = $("#nextMonth");
-const cBronze    = $("#cBronze");
-const cSilver    = $("#cSilver");
-const cGold      = $("#cGold");
-const avgPts     = $("#avgPts");
-const streakEl   = $("#streak");
-const monthCoin  = $("#monthCoin");
+const cBronze = $("#cBronze");
+const cSilver = $("#cSilver");
+const cGold = $("#cGold");
+const avgPts = $("#avgPts");
+const streakEl = $("#streak");
+const monthCoin = $("#monthCoin");
 const monthExplain = $("#monthExplain");
-const exportBtn  = $("#exportBtn");
+const exportBtn = $("#exportBtn");
 const importFile = $("#importFile");
 
 const thBronze = $("#thBronze");
 const thSilver = $("#thSilver");
-const thGold   = $("#thGold");
+const thGold = $("#thGold");
 const cfgTasks = $("#cfgTasks");
 const addTaskBtn = $("#addTaskBtn");
 const saveCfgBtn = $("#saveCfgBtn");
@@ -273,11 +294,70 @@ const saveCfgBtn = $("#saveCfgBtn");
   const today = new Date();
   datePick.value = ymd(today);
   monthPick.value = ym(today);
-  renderTasksForDay();
   renderCfg();
+  renderTasksForDay();
   rerunAuto();
   renderCalendar();
+  ensureTick();
 })();
+
+/* ================== TIMER CORE ================== */
+function getDayTimers(dayKey){
+  if (!tstore.days[dayKey]) tstore.days[dayKey] = {};
+  for (const t of cfg.tasks){
+    if (!tstore.days[dayKey][t.id]) tstore.days[dayKey][t.id] = { sec:0, running:false, start:null };
+  }
+  return tstore.days[dayKey];
+}
+function startTimer(dayKey, taskId){
+  const timers = getDayTimers(dayKey);
+  // stop any other running timers (single active)
+  for (const [id, st] of Object.entries(timers)){
+    if (st.running){
+      st.sec += Math.floor((Date.now() - st.start)/1000);
+      st.running = false; st.start = null;
+    }
+  }
+  const st = timers[taskId];
+  if (!st.running){ st.running = true; st.start = Date.now(); saveTimers(); }
+  ensureTick(); updateTimerUI();
+}
+function stopTimer(dayKey, taskId){
+  const st = getDayTimers(dayKey)[taskId];
+  if (st && st.running){
+    st.sec += Math.floor((Date.now() - st.start)/1000);
+    st.running = false; st.start = null;
+    saveTimers(); updateTimerUI(); syncMinutesFromTimers(); rerunAuto();
+  }
+}
+function stopAll(dayKey){
+  const timers = getDayTimers(dayKey);
+  let changed = false;
+  for (const st of Object.values(timers)){
+    if (st.running){
+      st.sec += Math.floor((Date.now() - st.start)/1000);
+      st.running = false; st.start = null; changed = true;
+    }
+  }
+  if (changed){ saveTimers(); updateTimerUI(); syncMinutesFromTimers(); rerunAuto(); }
+}
+function ensureTick(){
+  if (tickHandle) return;
+  tickHandle = setInterval(()=>{
+    const dayKey = datePick.value;
+    const timers = tstore.days[dayKey] || {};
+    let any = false;
+    for (const st of Object.values(timers)) if (st.running) { any = true; break; }
+    if (!any) return;
+    updateTimerUI(true); // live
+    syncMinutesFromTimers(true);
+    rerunAuto();
+  }, 1000);
+}
+function resetTick(){
+  if (tickHandle){ clearInterval(tickHandle); tickHandle=null; }
+  ensureTick();
+}
 
 /* ================== DAY FORM ================== */
 function renderTasksForDay(){
@@ -286,23 +366,46 @@ function renderTasksForDay(){
   const day = store.days[dayKey] || { tasks:{}, mins:{} };
   note.value = day.note || "";
 
+  // seed timers for this day
+  getDayTimers(dayKey);
+
   for (const t of cfg.tasks){
     const percVal = day.tasks?.[t.id] ?? "";
     const minsVal = day.mins?.[t.id] ?? "";
     const row = document.createElement("div");
     row.className = "taskrow";
+    row.dataset.task = t.id;
     row.innerHTML = `
       <span>${t.name} <span class="muted">(${fmt2(t.weight*100)}%) • target ${t.target||0}m</span></span>
+      <div class="timechip" id="time-${t.id}">00:00:00</div>
+      <button id="btn-${t.id}" data-task="${t.id}">Start</button>
       <input type="number" min="0" value="${minsVal}" data-task="${t.id}" data-kind="mins" placeholder="min" />
       <input type="number" min="0" max="100" value="${percVal}" data-task="${t.id}" data-kind="perc" placeholder="%" />
     `;
     taskList.appendChild(row);
   }
 
-  // listeners
+  // Inputs
   taskList.querySelectorAll("input").forEach(inp=>{
     inp.addEventListener("input", (e)=>onTaskInput(e.target));
   });
+
+  // Buttons
+  taskList.querySelectorAll("button[id^='btn-']").forEach(btn=>{
+    btn.addEventListener("click", ()=>{
+      const dayKey = datePick.value;
+      const id = btn.dataset.task;
+      const st = getDayTimers(dayKey)[id];
+      if (st.running) stopTimer(dayKey, id);
+      else startTimer(dayKey, id);
+      updateTimerUI();
+      syncMinutesFromTimers();
+      rerunAuto();
+    });
+  });
+
+  updateTimerUI();
+  syncMinutesFromTimers(); // fill minutes from timers on open
 }
 
 function onTaskInput(el){
@@ -318,19 +421,65 @@ function onTaskInput(el){
     const mins = +minsInp.value || 0;
     const perc = target ? clamp((mins/target)*100, 0, 100) : 0;
     percInp.value = Math.round(perc);
+    // also reflect into timer seconds store (no running change)
+    const st = getDayTimers(datePick.value)[id];
+    st.sec = Math.round(mins*60);
+    saveTimers();
+    updateTimerUI();
   } else {
     const perc = clamp(+percInp.value || 0, 0, 100);
     const mins = target ? Math.round((perc/100)*target) : 0;
     minsInp.value = mins || "";
+    const st = getDayTimers(datePick.value)[id];
+    st.sec = Math.round(mins*60);
+    saveTimers();
+    updateTimerUI();
   }
   rerunAuto();
+}
+
+function syncMinutesFromTimers(live=false){
+  const dayKey = datePick.value;
+  const timers = getDayTimers(dayKey);
+  for (const t of cfg.tasks){
+    const st = timers[t.id];
+    if (!st) continue;
+    const liveSec = st.running ? st.sec + Math.floor((Date.now()-st.start)/1000) : st.sec;
+    const mins = Math.max(0, Math.round(liveSec/60));
+    const row = taskList.querySelector(`.taskrow[data-task="${t.id}"]`);
+    if (!row) continue;
+    const minsInp = row.querySelector('input[data-kind="mins"]');
+    const percInp = row.querySelector('input[data-kind="perc"]');
+    // only overwrite if live update OR the field is empty (don’t fight the user typing)
+    if (live || minsInp.value === "" || +minsInp.value !== mins){
+      minsInp.value = mins ? String(mins) : "";
+      // recompute % from target
+      const perc = (+t.target||0) ? clamp((mins/(+t.target))*100,0,100) : 0;
+      percInp.value = Math.round(perc);
+    }
+  }
+}
+
+function updateTimerUI(live=false){
+  const dayKey = datePick.value;
+  const timers = tstore.days[dayKey] || {};
+  for (const t of cfg.tasks){
+    const el = document.getElementById(`time-${t.id}`);
+    const btn = document.getElementById(`btn-${t.id}`);
+    if (!el || !btn) continue;
+    const st = timers[t.id] || { sec:0, running:false, start:null };
+    const sec = st.running ? st.sec + Math.floor((Date.now()-st.start)/1000) : st.sec;
+    el.textContent = secsToHMS(sec);
+    btn.textContent = st.running ? "Stop" : "Start";
+    btn.style.borderColor = st.running ? "#7bd88f" : "#2a3052";
+  }
 }
 
 function gatherTaskData(){
   const perc = {};
   const mins = {};
   taskList.querySelectorAll(".taskrow").forEach(row=>{
-    const id    = row.querySelector('input[data-kind="perc"]').dataset.task;
+    const id    = row.dataset.task;
     const pVal  = +row.querySelector('input[data-kind="perc"]').value || 0;
     const mVal  = +row.querySelector('input[data-kind="mins"]').value || 0;
     perc[id] = pVal;
@@ -346,9 +495,11 @@ function rerunAuto(){
   coinOut.textContent = isNaN(eff) ? "–" : EMOJI[coinForEff(eff)];
 }
 
+/* Buttons */
 saveBtn.addEventListener("click", ()=>{
   const key = datePick.value;
   if (!key) return;
+  stopAll(key); // freeze time before saving
   const { perc, mins } = gatherTaskData();
   const eff = weightedEfficiency(perc);
   const coin = coinForEff(eff);
@@ -356,21 +507,32 @@ saveBtn.addEventListener("click", ()=>{
   saveStore();
   renderCalendar();
 });
-
 delBtn.addEventListener("click", ()=>{
   const key = datePick.value;
+  stopAll(key);
   delete store.days[key];
-  saveStore();
+  // clear timers too
+  delete tstore.days[key]; saveTimers();
   renderTasksForDay();
   rerunAuto();
   renderCalendar();
 });
+clearInputsBtn.addEventListener("click", ()=>{
+  taskList.querySelectorAll("input").forEach(inp=> inp.value = "");
+  // clear timer accumulated time for the day
+  const timers = getDayTimers(datePick.value);
+  for (const st of Object.values(timers)){ st.sec=0; st.running=false; st.start=null; }
+  saveTimers();
+  updateTimerUI();
+  rerunAuto();
+});
+stopAllBtn.addEventListener("click", ()=> stopAll(datePick.value));
 
 /* ================== CALENDAR / MONTH SUMMARY ================== */
 function monthMeta(ymStr){
   const [Y,M] = ymStr.split("-").map(Number);
   const first = new Date(Y, M-1, 1);
-  const startW = first.getDay(); // 0 Sun .. 6 Sat
+  const startW = first.getDay();
   const days = new Date(Y, M, 0).getDate();
   return { Y, M, first, startW, days };
 }
@@ -404,7 +566,7 @@ function renderCalendar(){
     calGrid.appendChild(el);
   }
 
-  // counts and stats
+  // counts + summary
   let b=0,s=0,g=0, ptsSum=0, n=0;
   let bestStreak = 0, cur = 0;
   for (let d=1; d<=days; d++){
@@ -419,9 +581,7 @@ function renderCalendar(){
     if (info.coin==="silver" || info.coin==="gold") { cur++; bestStreak = Math.max(bestStreak, cur); }
     else cur = 0;
   }
-  $("#cBronze").textContent = b;
-  $("#cSilver").textContent = s;
-  $("#cGold").textContent   = g;
+  cBronze.textContent = b; cSilver.textContent = s; cGold.textContent = g;
 
   const avg = n ? (ptsSum/n) : 0;
   avgPts.textContent = fmt2(avg);
@@ -433,10 +593,8 @@ function renderCalendar(){
   if (b===maxCount) winners.push("bronze");
   if (s===maxCount) winners.push("silver");
   if (g===maxCount) winners.push("gold");
-  if (winners.length===1) {
-    monthResult = winners[0];
-    explain = "Dominant coin by count.";
-  } else {
+  if (winners.length===1) { monthResult = winners[0]; explain = "Dominant coin by count."; }
+  else {
     if (avg >= 2.5) monthResult = "gold";
     else if (avg >= 1.75) monthResult = "silver";
     else monthResult = "bronze";
@@ -459,7 +617,11 @@ nextMonthBtn.addEventListener("click", ()=>{
   renderCalendar();
 });
 monthPick.addEventListener("input", renderCalendar);
-datePick.addEventListener("input", ()=>{ renderTasksForDay(); rerunAuto(); });
+datePick.addEventListener("input", ()=>{
+  // stop all timers for previous date (capture time), then render new
+  stopAll(datePick.value);
+  renderTasksForDay(); rerunAuto(); resetTick();
+});
 
 /* ================== CONFIG UI ================== */
 function renderCfg(){
@@ -472,14 +634,13 @@ function renderCfg(){
     const row = document.createElement("div");
     row.className = "taskcfgrow";
     row.innerHTML = `
-      <input type="text" value="${t.name}" data-id="${t.id}" data-k="name" placeholder="name"/>
-      <input type="text" value="${t.id}" data-id="${t.id}" data-k="id" placeholder="id"/>
-      <input type="number" step="0.05" value="${t.weight}" data-id="${t.id}" data-k="weight" placeholder="weight (0-1)"/>
-      <input type="number" step="5" value="${t.target||60}" data-id="${t.id}" data-k="target" placeholder="target min"/>
+      <input type="text" value="${t.name}" data-id="${t.id}" data-k="name" />
+      <input type="text" value="${t.id}" data-id="${t.id}" data-k="id" />
+      <input type="number" step="0.05" value="${+t.weight||0}" data-id="${t.id}" data-k="weight" />
+      <input type="number" step="5" value="${+t.target||0}" data-id="${t.id}" data-k="target" />
     `;
     cfgTasks.appendChild(row);
   }
-
   cfgTasks.querySelectorAll("input").forEach(inp=>{
     inp.addEventListener("input", (e)=>{
       const id = e.target.dataset.id;
@@ -496,7 +657,7 @@ function renderCfg(){
 }
 addTaskBtn.addEventListener("click", ()=>{
   const newid = "task"+Math.random().toString(36).slice(2,7);
-  cfg.tasks.push({ id:newid, name:"New Task", weight:0.1, target:60 });
+  cfg.tasks.push({ id:newid, name:"New Task", weight:0.1, target:30 });
   renderCfg();
 });
 saveCfgBtn.addEventListener("click", ()=>{
@@ -508,14 +669,13 @@ saveCfgBtn.addEventListener("click", ()=>{
   };
   cfg.tasks = normalizeWeights(cfg.tasks);
   saveCfg();
-  renderTasksForDay();
-  rerunAuto();
-  renderCalendar();
+  renderTasksForDay(); rerunAuto(); renderCalendar();
 });
 
 /* ================== IMPORT / EXPORT ================== */
 exportBtn.addEventListener("click", ()=>{
-  const payload = { cfg, store };
+  stopAll(datePick.value); // snapshot times
+  const payload = { cfg, store, timers: tstore };
   const blob = new Blob([JSON.stringify(payload,null,2)], { type:"application/json" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -528,13 +688,13 @@ document.querySelector("label input#importFile").addEventListener("change", (e)=
   r.onload = () => {
     try {
       const data = JSON.parse(r.result);
-      if (data.cfg) cfg = {
-        thresholds: DEFAULT_THRESHOLDS, tasks: DEFAULT_TASKS, ...data.cfg,
-        tasks: (data.cfg.tasks || DEFAULT_TASKS).map(t=>({ target:60, ...t }))
+      if (data.cfg) cfg = { thresholds: DEFAULT_THRESHOLDS, tasks: DEFAULT_TASKS, ...data.cfg,
+        tasks:(data.cfg.tasks||DEFAULT_TASKS).map(t=>({ target:60, ...t }))
       };
       if (data.store) store = data.store;
-      saveCfg(); saveStore();
-      renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar();
+      if (data.timers) tstore = data.timers;
+      saveCfg(); saveStore(); saveTimers();
+      renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); updateTimerUI();
       alert("Imported successfully.");
     } catch(err){ alert("Invalid JSON file."); }
   };
