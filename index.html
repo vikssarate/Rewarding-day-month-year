@@ -52,6 +52,10 @@
       Import JSON
       <input id="importFile" type="file" accept="application/json" class="hidden" />
     </label>
+    <!-- NEW: sound controls -->
+    <input id="soundToggle" type="checkbox" />
+    <label for="soundToggle" class="linkish" title="Enable alarm">Sound</label>
+    <button id="testSoundBtn" title="Play test chime">Test</button>
   </div>
 </header>
 
@@ -185,7 +189,7 @@ const EMOJI = { bronze:"🥉", silver:"🥈", gold:"🥇" };
 /* ================== STATE & STORAGE ================== */
 const SKEY   = "dailyCoins.v1";       // days data
 const SKCFG  = "dailyCoinsCfg.v1";    // tasks + thresholds
-const SKTMR  = "dailyCoinsTimers.v1"; // per-day timer runtime (seconds)
+const SKTMR  = "dailyCoinsTimers.v1"; // per-day timer runtime (seconds + 'fired')
 
 let cfg   = loadCfg();
 let store = loadStore();
@@ -194,6 +198,34 @@ let tstore = loadTimers();
 // one interval to tick all running timers
 let tickHandle = null;
 
+/* ======== SOUND (WebAudio) ======== */
+let audioCtx = null;
+let soundEnabled = false;
+function initAudio(){
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
+function playChime(){
+  if (!soundEnabled) return;
+  try { initAudio(); audioCtx.resume(); } catch(e){}
+  const ctx = audioCtx;
+  const now = ctx.currentTime;
+  const notes = [880, 1175, 1760]; // A5, D6, A6
+  notes.forEach((f,i)=>{
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = 'sine';
+    o.frequency.value = f;
+    o.connect(g); g.connect(ctx.destination);
+    const t = now + i*0.15;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.linearRampToValueAtTime(0.2, t+0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.25);
+    o.start(t); o.stop(t+0.27);
+  });
+  if (navigator.vibrate) navigator.vibrate(250);
+}
+
+/* ================== LOAD/SAVE ================== */
 function loadCfg(){
   const c = localStorage.getItem(SKCFG);
   if (c) {
@@ -219,7 +251,7 @@ function saveStore(){ localStorage.setItem(SKEY, JSON.stringify(store)); }
 function loadTimers(){
   const s = localStorage.getItem(SKTMR);
   if (s) return JSON.parse(s);
-  const seeded = { days:{} }; // { "YYYY-MM-DD": { [taskId]: {sec:0, running:false, start:null} } }
+  const seeded = { days:{} }; // { "YYYY-MM-DD": { [taskId]: {sec:0, running:false, start:null, fired:false} } }
   localStorage.setItem(SKTMR, JSON.stringify(seeded));
   return seeded;
 }
@@ -236,7 +268,6 @@ function secsToHMS(s){
   const h = Math.floor(s/3600), m = Math.floor((s%3600)/60), ss = Math.floor(s%60);
   return `${pad2(h)}:${pad2(m)}:${pad2(ss)}`;
 }
-
 function normalizeWeights(tasks){
   const sum = tasks.reduce((a,t)=>a+(+t.weight||0),0) || 1;
   return tasks.map(t => ({...t, weight:(+t.weight||0)/sum }));
@@ -256,6 +287,22 @@ function weightedEfficiency(taskPercents){
   }
   return clamp(acc, 0, 100);
 }
+
+/* ================== SOUND UI ================== */
+const soundToggle  = $("#soundToggle");
+const testSoundBtn = $("#testSoundBtn");
+soundEnabled = localStorage.getItem('dailyCoins.sound') === '1';
+if (soundToggle) soundToggle.checked = soundEnabled;
+soundToggle?.addEventListener('change', () => {
+  soundEnabled = soundToggle.checked;
+  localStorage.setItem('dailyCoins.sound', soundEnabled ? '1' : '0');
+  if (soundEnabled){ initAudio(); audioCtx.resume(); playChime(); }
+});
+testSoundBtn?.addEventListener('click', () => {
+  soundEnabled = true; localStorage.setItem('dailyCoins.sound','1');
+  if (soundToggle) soundToggle.checked = true;
+  initAudio(); audioCtx.resume(); playChime();
+});
 
 /* ================== UI BINDINGS ================== */
 const datePick = $("#datePick");
@@ -305,7 +352,11 @@ const saveCfgBtn = $("#saveCfgBtn");
 function getDayTimers(dayKey){
   if (!tstore.days[dayKey]) tstore.days[dayKey] = {};
   for (const t of cfg.tasks){
-    if (!tstore.days[dayKey][t.id]) tstore.days[dayKey][t.id] = { sec:0, running:false, start:null };
+    if (!tstore.days[dayKey][t.id]) {
+      tstore.days[dayKey][t.id] = { sec:0, running:false, start:null, fired:false };
+    } else if (tstore.days[dayKey][t.id].fired === undefined) {
+      tstore.days[dayKey][t.id].fired = false; // back-compat
+    }
   }
   return tstore.days[dayKey];
 }
@@ -320,14 +371,14 @@ function startTimer(dayKey, taskId){
   }
   const st = timers[taskId];
   if (!st.running){ st.running = true; st.start = Date.now(); saveTimers(); }
-  ensureTick(); updateTimerUI();
+  ensureTick(); updateTimerUI(); syncMinutesFromTimers(); checkAlarms(dayKey); rerunAuto();
 }
 function stopTimer(dayKey, taskId){
   const st = getDayTimers(dayKey)[taskId];
   if (st && st.running){
     st.sec += Math.floor((Date.now() - st.start)/1000);
     st.running = false; st.start = null;
-    saveTimers(); updateTimerUI(); syncMinutesFromTimers(); rerunAuto();
+    saveTimers(); updateTimerUI(); syncMinutesFromTimers(); checkAlarms(dayKey); rerunAuto();
   }
 }
 function stopAll(dayKey){
@@ -339,7 +390,7 @@ function stopAll(dayKey){
       st.running = false; st.start = null; changed = true;
     }
   }
-  if (changed){ saveTimers(); updateTimerUI(); syncMinutesFromTimers(); rerunAuto(); }
+  if (changed){ saveTimers(); updateTimerUI(); syncMinutesFromTimers(); checkAlarms(dayKey); rerunAuto(); }
 }
 function ensureTick(){
   if (tickHandle) return;
@@ -351,12 +402,30 @@ function ensureTick(){
     if (!any) return;
     updateTimerUI(true); // live
     syncMinutesFromTimers(true);
+    checkAlarms(dayKey);
     rerunAuto();
   }, 1000);
 }
 function resetTick(){
   if (tickHandle){ clearInterval(tickHandle); tickHandle=null; }
   ensureTick();
+}
+
+/* Fire alarm when target reached once; re-arm if drop below target */
+function checkAlarms(dayKey){
+  const timers = getDayTimers(dayKey);
+  for (const t of cfg.tasks){
+    const st = timers[t.id]; if (!st) continue;
+    const targetSec = (+t.target || 0) * 60;
+    if (targetSec <= 0) { st.fired = true; continue; }
+    const elapsed = st.running ? st.sec + Math.floor((Date.now() - st.start)/1000) : st.sec;
+    if (elapsed >= targetSec && !st.fired){
+      st.fired = true; saveTimers(); playChime();
+    }
+    if (elapsed < targetSec && st.fired){
+      st.fired = false; saveTimers();
+    }
+  }
 }
 
 /* ================== DAY FORM ================== */
@@ -398,14 +467,12 @@ function renderTasksForDay(){
       const st = getDayTimers(dayKey)[id];
       if (st.running) stopTimer(dayKey, id);
       else startTimer(dayKey, id);
-      updateTimerUI();
-      syncMinutesFromTimers();
-      rerunAuto();
     });
   });
 
   updateTimerUI();
   syncMinutesFromTimers(); // fill minutes from timers on open
+  checkAlarms(dayKey);
 }
 
 function onTaskInput(el){
@@ -417,24 +484,24 @@ function onTaskInput(el){
   const t = cfg.tasks.find(x=>x.id===id) || { target:0 };
   const target = +t.target || 0;
 
+  const st = getDayTimers(datePick.value)[id];
+
   if (kind === "mins"){
     const mins = +minsInp.value || 0;
     const perc = target ? clamp((mins/target)*100, 0, 100) : 0;
     percInp.value = Math.round(perc);
-    // also reflect into timer seconds store (no running change)
-    const st = getDayTimers(datePick.value)[id];
     st.sec = Math.round(mins*60);
-    saveTimers();
-    updateTimerUI();
   } else {
     const perc = clamp(+percInp.value || 0, 0, 100);
     const mins = target ? Math.round((perc/100)*target) : 0;
     minsInp.value = mins || "";
-    const st = getDayTimers(datePick.value)[id];
     st.sec = Math.round(mins*60);
-    saveTimers();
-    updateTimerUI();
   }
+  // re-arm if dropped below target
+  st.fired = st.sec >= (target*60) ? st.fired : false;
+  saveTimers();
+  updateTimerUI();
+  checkAlarms(datePick.value);
   rerunAuto();
 }
 
@@ -450,10 +517,8 @@ function syncMinutesFromTimers(live=false){
     if (!row) continue;
     const minsInp = row.querySelector('input[data-kind="mins"]');
     const percInp = row.querySelector('input[data-kind="perc"]');
-    // only overwrite if live update OR the field is empty (don’t fight the user typing)
     if (live || minsInp.value === "" || +minsInp.value !== mins){
       minsInp.value = mins ? String(mins) : "";
-      // recompute % from target
       const perc = (+t.target||0) ? clamp((mins/(+t.target))*100,0,100) : 0;
       percInp.value = Math.round(perc);
     }
@@ -511,7 +576,6 @@ delBtn.addEventListener("click", ()=>{
   const key = datePick.value;
   stopAll(key);
   delete store.days[key];
-  // clear timers too
   delete tstore.days[key]; saveTimers();
   renderTasksForDay();
   rerunAuto();
@@ -519,9 +583,8 @@ delBtn.addEventListener("click", ()=>{
 });
 clearInputsBtn.addEventListener("click", ()=>{
   taskList.querySelectorAll("input").forEach(inp=> inp.value = "");
-  // clear timer accumulated time for the day
   const timers = getDayTimers(datePick.value);
-  for (const st of Object.values(timers)){ st.sec=0; st.running=false; st.start=null; }
+  for (const st of Object.values(timers)){ st.sec=0; st.running=false; st.start=null; st.fired=false; }
   saveTimers();
   updateTimerUI();
   rerunAuto();
@@ -566,7 +629,6 @@ function renderCalendar(){
     calGrid.appendChild(el);
   }
 
-  // counts + summary
   let b=0,s=0,g=0, ptsSum=0, n=0;
   let bestStreak = 0, cur = 0;
   for (let d=1; d<=days; d++){
@@ -577,7 +639,6 @@ function renderCalendar(){
     if (info.coin==="silver") s++;
     if (info.coin==="gold")   g++;
     ptsSum += PTS[info.coin]; n++;
-
     if (info.coin==="silver" || info.coin==="gold") { cur++; bestStreak = Math.max(bestStreak, cur); }
     else cur = 0;
   }
@@ -618,9 +679,7 @@ nextMonthBtn.addEventListener("click", ()=>{
 });
 monthPick.addEventListener("input", renderCalendar);
 datePick.addEventListener("input", ()=>{
-  // stop all timers for previous date (capture time), then render new
-  stopAll(datePick.value);
-  renderTasksForDay(); rerunAuto(); resetTick();
+  renderTasksForDay(); rerunAuto(); resetTick(); checkAlarms(datePick.value);
 });
 
 /* ================== CONFIG UI ================== */
@@ -694,7 +753,7 @@ document.querySelector("label input#importFile").addEventListener("change", (e)=
       if (data.store) store = data.store;
       if (data.timers) tstore = data.timers;
       saveCfg(); saveStore(); saveTimers();
-      renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); updateTimerUI();
+      renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); updateTimerUI(); checkAlarms(datePick.value);
       alert("Imported successfully.");
     } catch(err){ alert("Invalid JSON file."); }
   };
