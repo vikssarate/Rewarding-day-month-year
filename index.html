@@ -23,13 +23,11 @@
   .day .dnum { font-size:12px; color:var(--muted); }
   .coin { font-size:22px; text-align:right; }
   .ghost { opacity:.35 }
-  /* responsive summary grid */
   .summary { display:grid; gap:8px; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); margin-top:8px; }
   .pill { background:#12162a; border:1px solid #2a3052; border-radius:999px; padding:10px 12px; display:flex; align-items:center; justify-content:center; gap:8px; }
   .stat { font-size:13px; color:var(--muted); }
   .big { font-size:28px; font-weight:700; }
   .muted { color:var(--muted); }
-  /* Task row: name | timer | start/stop | minutes | percent */
   .taskrow { display:grid; grid-template-columns:1fr 88px 90px 86px 72px; gap:8px; align-items:center; margin-bottom:6px; min-width:620px; }
   .taskrow span { font-size:13px; }
   .timechip { font-variant-numeric:tabular-nums; text-align:center; padding:6px 8px; border:1px solid #2a3052; border-radius:8px; background:#12162a; min-width:84px; }
@@ -42,12 +40,13 @@
   .hidden { display:none !important; }
   .taskcfgrow { display:grid; grid-template-columns:1fr 140px 90px 120px; gap:8px; align-items:center; margin-bottom:6px; }
 
-  /* Form track */
-  .track { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-  .step { display:flex; align-items:center; gap:6px; }
-  .bubble { width:28px; height:28px; border-radius:50%; border:1px solid #2a3052; display:flex; align-items:center; justify-content:center; font-size:16px; }
-  .bubble.active { border-color:#7bd88f; box-shadow:0 0 0 2px rgba(123,216,143,.15) inset; }
-  .step label { font-size:12px; color:var(--muted); }
+  /* Tiny tabs for Sync/Pull */
+  .tabs { display:flex; gap:6px; margin-bottom:6px; }
+  .tabs button { background:#0f1430; border:1px solid #2a3052; }
+  .tabs button.active { outline:2px solid #2f67ff; }
+  .tabp { display:none; }
+  .tabp.active { display:block; }
+  .mono { font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace; }
 </style>
 </head>
 <body>
@@ -130,7 +129,7 @@
     </details>
   </section>
 
-  <!-- Right: Month + summary (with Form + Year) -->
+  <!-- Right: Month + summary (with Form + Year + Sync) -->
   <section class="card">
     <div class="row" style="justify-content:space-between">
       <div class="row">
@@ -165,14 +164,12 @@
         <div class="muted" id="monthExplain"></div>
       </div>
 
-      <!-- NEW: Overall Year -->
       <div class="card center">
         <div class="stat">Overall Year (<span id="yearTitle"></span>)</div>
         <div class="big" id="yearCoin">–</div>
         <div class="muted" id="yearExplain"></div>
       </div>
 
-      <!-- Form card -->
       <div class="card" id="formCard">
         <div class="stat">Form Stage</div>
         <div class="big" id="formStageBig">👶 Toddler</div>
@@ -183,6 +180,41 @@
         </div>
         <div class="muted" id="formExplain" style="margin-top:6px;font-size:12px;"></div>
       </div>
+
+      <!-- NEW: CouchDB Sync card -->
+      <div class="card">
+        <div class="stat">CouchDB Sync</div>
+        <div class="tabs">
+          <button id="tabSync" class="active">Sync</button>
+          <button id="tabPull">Pull</button>
+        </div>
+
+        <div id="paneSync" class="tabp active">
+          <div class="row">
+            <label>Host</label>
+            <input id="couchHost" class="mono" style="min-width:260px" value="https://couch.techstudy.me"/>
+            <label>DB</label>
+            <input id="couchDb" class="mono" style="min-width:130px" value="record"/>
+          </div>
+          <div class="row" style="margin-top:6px">
+            <button id="liveToggle">Live Sync: Off</button>
+            <button id="pushNow">Push Now ⬆️</button>
+            <button id="pullNow">Pull Now ⬇️</button>
+          </div>
+          <div class="muted mono" id="syncStatus" style="margin-top:6px">Idle.</div>
+        </div>
+
+        <div id="panePull" class="tabp">
+          <div class="muted" style="margin-bottom:6px">
+            Use this if you cleared browser data or moved to a new device. It will pull from CouchDB and restore everything.
+          </div>
+          <div class="row">
+            <button id="pullRestore" class="primary">Pull & Restore All</button>
+            <button id="clearLocal">Clear Local (localStorage + IndexedDB)</button>
+          </div>
+          <div class="muted" id="pullMsg" style="margin-top:6px"></div>
+        </div>
+      </div>
     </div>
   </section>
 </div>
@@ -191,6 +223,9 @@
   <div>Tip: tap a day in the calendar to edit; export regularly for backup.</div>
   <div class="right">Made for 🥉/🥈/🥇 habit tracking</div>
 </footer>
+
+<!-- PouchDB -->
+<script src="https://cdn.jsdelivr.net/npm/pouchdb@7.3.1/dist/pouchdb.min.js"></script>
 
 <script>
 /* ================== CONFIG ================== */
@@ -249,35 +284,6 @@ function playChime(){
   if (navigator.vibrate) navigator.vibrate(250);
 }
 
-/* ================== LOAD/SAVE (robust) ================== */
-function loadCfg(){
-  const raw = localStorage.getItem(SKCFG);
-  if (raw){
-    try{
-      const obj = JSON.parse(raw) || {};
-      let tasks = Array.isArray(obj.tasks) && obj.tasks.length ? obj.tasks : DEFAULT_TASKS;
-      tasks = tasks.map(t => ({ target:60, ...t }));
-      const thresholds = { ...DEFAULT_THRESHOLDS, ...(obj.thresholds||{}) };
-      const sanitized = { tasks, thresholds };
-      localStorage.setItem(SKCFG, JSON.stringify(sanitized));
-      return sanitized;
-    }catch(e){}
-  }
-  const seeded = { tasks: DEFAULT_TASKS, thresholds: DEFAULT_THRESHOLDS };
-  localStorage.setItem(SKCFG, JSON.stringify(seeded));
-  return seeded;
-}
-function saveCfg(){ localStorage.setItem(SKCFG, JSON.stringify(cfg)); }
-
-function loadStore(){ const s = localStorage.getItem(SKEY); if (s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKEY,JSON.stringify(seeded)); return seeded; }
-function saveStore(){ localStorage.setItem(SKEY, JSON.stringify(store)); }
-
-function loadTimers(){ const s = localStorage.getItem(SKTMR); if (s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKTMR, JSON.stringify(seeded)); return seeded; }
-function saveTimers(){ localStorage.setItem(SKTMR, JSON.stringify(tstore)); }
-
-function loadForm(){ const s = localStorage.getItem(SKFORM); if (s) return JSON.parse(s); const seeded={stage:0, evaluatedThrough:null}; localStorage.setItem(SKFORM, JSON.stringify(seeded)); return seeded; }
-function saveForm(){ localStorage.setItem(SKFORM, JSON.stringify(form)); }
-
 /* ================== HELPERS ================== */
 const $ = (q) => document.querySelector(q);
 const fmt2 = (n) => (Math.round(n*100)/100).toFixed(2);
@@ -289,6 +295,7 @@ function secsToHMS(s){ const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), ss
 function normalizeWeights(tasks){ const sum=tasks.reduce((a,t)=>a+(+t.weight||0),0)||1; return tasks.map(t=>({...t,weight:(+t.weight||0)/sum})); }
 function coinForEff(eff){ const {BRONZE_MAX,SILVER_MAX,GOLD_MIN}=cfg.thresholds; if (eff>=GOLD_MIN) return "gold"; if (eff<=BRONZE_MAX) return "bronze"; return "silver"; }
 function weightedEfficiency(taskPercents){ const tasks=normalizeWeights(cfg.tasks); let acc=0; for (const t of tasks){ const p=clamp(+taskPercents[t.id]||0,0,100); acc += (p/100)*t.weight*100; } return clamp(acc,0,100); }
+function debounce(fn, ms){ let t; return function(...a){ clearTimeout(t); t=setTimeout(()=>fn.apply(this,a), ms); }; }
 
 /* ================== SOUND UI ================== */
 const soundToggle=$("#soundToggle"), testSoundBtn=$("#testSoundBtn");
@@ -314,10 +321,11 @@ const yearTitle=$("#yearTitle"), yearCoin=$("#yearCoin"), yearExplain=$("#yearEx
   if (!datePick.value)  datePick.value  = ymd(today);
   if (!monthPick.value) monthPick.value = ym(today);
   renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); renderFormCard(); renderYearCard(); ensureTick();
+  pouchInit(); // ← NEW
 })();
 
 /* ================== TIMERS + ALARMS ================== */
-const ALARMS = {}; // { dayKey: { taskId: intervalId } }
+const ALARMS = {};
 function getDayTimers(dayKey){
   if (!tstore.days[dayKey]) tstore.days[dayKey]={};
   for (const t of cfg.tasks){
@@ -367,7 +375,7 @@ function checkAlarms(dayKey){
   }
 }
 
-/* ================== FORM (Toddler → Professional) ================== */
+/* ================== FORM ================== */
 function renderFormCard(){
   const stageLabel = `${FORM_EMOJI[form.stage]} ${FORM_STAGES[form.stage]}`;
   formStageBig.textContent = stageLabel;
@@ -446,30 +454,23 @@ function computeMonthSummary(ymStr){
   else { coin = avg>=2.5 ? "gold" : avg>=1.75 ? "silver" : "bronze"; explain="Tie → resolved by average points."; }
   return {b,s,g,nDays:n,avg,coin,explain};
 }
-
 function computeYearSummary(yearStr){
-  // month coin counts (based on monthly performance) + daily-weighted average points
   const monthCounts = { bronze:0, silver:0, gold:0 };
   let totalDays=0, totalPts=0;
-
   for (let m=1; m<=12; m++){
     const ymStr = `${yearStr}-${pad2(m)}`;
     const ms = computeMonthSummary(ymStr);
     if (ms.nDays>0){ monthCounts[ms.coin]++; totalDays += ms.nDays; totalPts += ms.avg * ms.nDays; }
   }
-
   if (totalDays===0) return { coin:null, explain:"No data this year." };
-
   const maxCount = Math.max(monthCounts.bronze, monthCounts.silver, monthCounts.gold);
   const winners=[]; if (monthCounts.bronze===maxCount) winners.push("bronze"); if (monthCounts.silver===maxCount) winners.push("silver"); if (monthCounts.gold===maxCount) winners.push("gold");
-
   const avgYear = totalPts / totalDays;
   let coin, explain;
   if (winners.length===1){ coin=winners[0]; explain="Dominant monthly coin by count."; }
   else { coin = avgYear>=2.5 ? "gold" : avgYear>=1.75 ? "silver" : "bronze"; explain="Tie → resolved by average points across the year."; }
   return { coin, explain };
 }
-
 function renderYearCard(){
   const year = (monthPick.value || ym(new Date())).slice(0,4);
   yearTitle.textContent = year;
@@ -619,7 +620,7 @@ function renderCalendar(){
   monthCoin.textContent = n ? EMOJI[monthResult] : "–";
   monthExplain.textContent = n ? explain : "No data this month.";
 
-  renderYearCard(); // update the year rollup for the selected month’s year
+  renderYearCard();
 }
 
 /* ================== BUTTONS ================== */
@@ -666,7 +667,7 @@ datePick.addEventListener("input", ()=>{ silenceAllAcrossDays(); renderTasksForD
 
 /* ================== CONFIG UI RENDER ================== */
 function renderCfg(){
-  thBronze.value=cfg.thresholds.BRONZE_MAX; thSilver.value=cfg.thresholds.SILVER_MAX; thGold.value=cfg.thresholds.GOLD_MIN;
+  thBronze.value=cfg.thresholds.BRONZE_MAX; thSilver.value=cfg.thresholds.SILVER_MAX; thGold.value=cfg.thresholdS?.GOLD_MIN ?? cfg.thresholds.GOLD_MIN; // tolerate import older keys
   cfgTasks.innerHTML="";
   for (const t of cfg.tasks){
     const row=document.createElement("div"); row.className="taskcfgrow";
@@ -715,6 +716,210 @@ document.querySelector("label input#importFile").addEventListener("change",(e)=>
     alert("Imported successfully.");
   }catch(err){ alert("Invalid JSON file."); } }; r.readAsText(f);
 });
+
+/* ================== LOAD/SAVE (robust) ================== */
+function loadCfg(){
+  const raw = localStorage.getItem(SKCFG);
+  if (raw){
+    try{
+      const obj = JSON.parse(raw) || {};
+      let tasks = Array.isArray(obj.tasks) && obj.tasks.length ? obj.tasks : DEFAULT_TASKS;
+      tasks = tasks.map(t => ({ target:60, ...t }));
+      const thresholds = { ...DEFAULT_THRESHOLDS, ...(obj.thresholds||{}) };
+      const sanitized = { tasks, thresholds };
+      localStorage.setItem(SKCFG, JSON.stringify(sanitized));
+      return sanitized;
+    }catch(e){}
+  }
+  const seeded = { tasks: DEFAULT_TASKS, thresholds: DEFAULT_THRESHOLDS };
+  localStorage.setItem(SKCFG, JSON.stringify(seeded));
+  return seeded;
+}
+function saveCfg(){ localStorage.setItem(SKCFG, JSON.stringify(cfg)); schedulePouchSave(); }
+
+function loadStore(){ const s = localStorage.getItem(SKEY); if (s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKEY,JSON.stringify(seeded)); return seeded; }
+function saveStore(){ localStorage.setItem(SKEY, JSON.stringify(store)); schedulePouchSave(); }
+
+function loadTimers(){ const s = localStorage.getItem(SKTMR); if (s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKTMR, JSON.stringify(seeded)); return seeded; }
+function saveTimers(){ localStorage.setItem(SKTMR, JSON.stringify(tstore)); schedulePouchSave(); }
+
+function loadForm(){ const s = localStorage.getItem(SKFORM); if (s) return JSON.parse(s); const seeded={stage:0, evaluatedThrough:null}; localStorage.setItem(SKFORM, JSON.stringify(seeded)); return seeded; }
+function saveForm(){ localStorage.setItem(SKFORM, JSON.stringify(form)); schedulePouchSave(); }
+
+/* ================== POUCHDB SYNC ================== */
+const POUCH_LOCAL_NAME = 'daily-coins';
+const APP_DOC_ID = 'app_state_v1';
+
+let pdb = null;
+let appDocRev = null;
+let liveSync = null;
+
+const couch = {
+  host: localStorage.getItem('couch.host') || 'https://couch.techstudy.me',
+  db:   localStorage.getItem('couch.db')   || 'record'
+};
+
+const couchHostInp = $("#couchHost");
+const couchDbInp = $("#couchDb");
+const liveToggleBtn = $("#liveToggle");
+const pushNowBtn = $("#pushNow");
+const pullNowBtn = $("#pullNow");
+const syncStatus = $("#syncStatus");
+const tabSync = $("#tabSync"), tabPull = $("#tabPull");
+const paneSync = $("#paneSync"), panePull = $("#panePull");
+const pullRestoreBtn = $("#pullRestore"), clearLocalBtn = $("#clearLocal");
+const pullMsg = $("#pullMsg");
+
+function remoteURL(){ return `${(couch.host||'').replace(/\/$/,'')}/${encodeURIComponent(couch.db||'')}`; }
+
+function setStatus(msg){ if (syncStatus) syncStatus.textContent = msg; }
+function setPullMsg(msg){ if (pullMsg) pullMsg.textContent = msg; }
+
+function pouchInit(){
+  try{
+    pdb = new PouchDB(POUCH_LOCAL_NAME);
+  }catch(e){
+    setStatus('PouchDB init failed (IndexedDB blocked?)');
+    return;
+  }
+  // Prefill inputs
+  if (couchHostInp) couchHostInp.value = couch.host;
+  if (couchDbInp)   couchDbInp.value   = couch.db;
+
+  // Changes feed: keep UI in sync if app doc changes (from remote or another tab)
+  pdb.changes({ live:true, since:'now', include_docs:true, doc_ids:[APP_DOC_ID] })
+    .on('change', (c)=>{ if (c.doc) applyFromDoc(c.doc, /*render=*/true); })
+    .on('error', ()=>{});
+
+  // If no local data, try pulling from remote once
+  const noLocal = !localStorage.getItem(SKEY) && !localStorage.getItem(SKCFG) && !localStorage.getItem(SKTMR) && !localStorage.getItem(SKFORM);
+  if (noLocal){
+    setStatus('No local data → trying initial pull…');
+    pouchPull().then(()=> pdb.get(APP_DOC_ID).then(d=>applyFromDoc(d,true)).catch(()=>setStatus('No remote state yet.')))
+               .catch(()=> setStatus('Initial pull failed (check CORS/DB).'));
+  }
+
+  // Small tabs
+  function activateTab(which){
+    if (which==='pull'){ tabPull.classList.add('active'); tabSync.classList.remove('active'); panePull.classList.add('active'); paneSync.classList.remove('active'); }
+    else { tabSync.classList.add('active'); tabPull.classList.remove('active'); paneSync.classList.add('active'); panePull.classList.remove('active'); }
+  }
+  tabSync?.addEventListener('click', ()=>activateTab('sync'));
+  tabPull?.addEventListener('click', ()=>activateTab('pull'));
+  activateTab('sync');
+
+  // Inputs
+  couchHostInp?.addEventListener('input', ()=>{ couch.host=couchHostInp.value.trim(); localStorage.setItem('couch.host', couch.host); if (liveSync) restartLiveSync(); });
+  couchDbInp?.addEventListener('input',   ()=>{ couch.db=couchDbInp.value.trim();     localStorage.setItem('couch.db',   couch.db);   if (liveSync) restartLiveSync(); });
+
+  liveToggleBtn?.addEventListener('click', ()=>{
+    if (liveSync){ stopLiveSync(); }
+    else { startLiveSync(); }
+  });
+  pushNowBtn?.addEventListener('click', async ()=>{
+    await writeAppDoc(); // ensure latest local saved
+    setStatus('Pushing…');
+    pouchPush().then(()=> setStatus('Push complete.')).catch(()=> setStatus('Push failed.'));
+  });
+  pullNowBtn?.addEventListener('click', async ()=>{
+    setStatus('Pulling…');
+    pouchPull().then(async ()=>{
+      setStatus('Pulled. Applying…');
+      try { const d = await pdb.get(APP_DOC_ID); applyFromDoc(d,true); setStatus('Applied.'); } catch{ setStatus('No remote state to apply.'); }
+    }).catch(()=> setStatus('Pull failed.'));
+  });
+
+  pullRestoreBtn?.addEventListener('click', async ()=>{
+    setPullMsg('Restoring… (pulling from remote)');
+    try{
+      await clearLocalOnly();
+      await pouchPull();
+      const d = await pdb.get(APP_DOC_ID);
+      applyFromDoc(d,true);
+      setPullMsg('Restore complete ✅');
+    }catch(e){ setPullMsg('Restore failed. Check host/DB/CORS.'); }
+  });
+  clearLocalBtn?.addEventListener('click', async ()=>{
+    await clearLocalOnly();
+    setPullMsg('Local cleared. Now press “Pull & Restore All”.');
+  });
+}
+
+function remoteDB(){ // open lazily each time to pick updated host/db
+  return new PouchDB(remoteURL(), { skip_setup:true }); // expects DB already created & CORS enabled
+}
+function startLiveSync(){
+  if (liveSync) return;
+  setStatus('Starting live sync…');
+  liveSync = PouchDB.sync(pdb, remoteDB(), { live:true, retry:true })
+    .on('change', info => setStatus('Live: change'))
+    .on('paused', err => setStatus(err ? 'Live: paused (err)' : 'Live: paused'))
+    .on('active', ()=> setStatus('Live: active'))
+    .on('error', err => setStatus('Live error (check CORS/auth)'));
+  liveToggleBtn.textContent = 'Live Sync: On';
+}
+function stopLiveSync(){
+  if (!liveSync) return;
+  liveSync.cancel();
+  liveSync = null;
+  setStatus('Live sync stopped.');
+  liveToggleBtn.textContent = 'Live Sync: Off';
+}
+function restartLiveSync(){ stopLiveSync(); startLiveSync(); }
+
+async function writeAppDoc(){
+  if (!pdb) return;
+  const doc = { _id: APP_DOC_ID, updatedAt: new Date().toISOString(), cfg, store, tstore, form };
+  try{
+    if (!appDocRev){
+      try{ const cur = await pdb.get(APP_DOC_ID); appDocRev = cur._rev; }catch{}
+    }
+    if (appDocRev) doc._rev = appDocRev;
+    const res = await pdb.put(doc);
+    appDocRev = res.rev;
+  }catch(e){
+    if (e.status === 409){
+      const latest = await pdb.get(APP_DOC_ID);
+      doc._rev = latest._rev;
+      const res2 = await pdb.put(doc);
+      appDocRev = res2.rev;
+    } else {
+      // non-fatal
+    }
+  }
+}
+const schedulePouchSave = debounce(writeAppDoc, 600);
+
+async function applyFromDoc(doc, render=false){
+  if (!doc) return;
+  appDocRev = doc._rev || appDocRev;
+  if (doc.cfg)   { cfg = doc.cfg;   saveCfg(); }
+  if (doc.store) { store = doc.store; saveStore(); }
+  if (doc.tstore){ tstore = doc.tstore; saveTimers(); }
+  if (doc.form)  { form = doc.form; saveForm(); }
+  if (render){ renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); renderYearCard(); updateTimerUI(); renderFormCard(); checkAlarms(datePick.value); }
+}
+
+function pouchPush(){ return pdb.replicate.to(remoteDB()); }
+function pouchPull(){ return pdb.replicate.from(remoteDB()); }
+
+async function clearLocalOnly(){
+  // clear localStorage keys
+  localStorage.removeItem(SKEY);
+  localStorage.removeItem(SKCFG);
+  localStorage.removeItem(SKTMR);
+  localStorage.removeItem(SKFORM);
+  // reset in-memory
+  cfg = { tasks: DEFAULT_TASKS.map(t=>({...t})), thresholds: DEFAULT_THRESHOLDS };
+  store = { days:{} };
+  tstore = { days:{} };
+  form = { stage:0, evaluatedThrough:null };
+  // wipe local Pouch
+  if (pdb){ try{ await pdb.destroy(); }catch{}; pdb = new PouchDB(POUCH_LOCAL_NAME); appDocRev=null; }
+  renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); renderFormCard(); renderYearCard();
+}
+
+/* ========= END POUCH ========= */
 </script>
 </body>
 </html>
