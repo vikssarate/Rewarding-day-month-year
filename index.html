@@ -39,8 +39,6 @@
   .right { text-align:right; }
   .hidden { display:none !important; }
   .taskcfgrow { display:grid; grid-template-columns:1fr 140px 90px 120px; gap:8px; align-items:center; margin-bottom:6px; }
-
-  /* Tiny tabs for Sync/Pull */
   .tabs { display:flex; gap:6px; margin-bottom:6px; }
   .tabs button { background:#0f1430; border:1px solid #2a3052; }
   .tabs button.active { outline:2px solid #2f67ff; }
@@ -53,14 +51,14 @@
 <header>
   <h1>Daily Coins</h1>
   <div class="row">
-    <button id="exportBtn">Export JSON</button>
+    <button id="exportBtn" type="button">Export JSON</button>
     <label class="linkish">
       Import JSON
       <input id="importFile" type="file" accept="application/json" class="hidden" />
     </label>
     <input id="soundToggle" type="checkbox" />
     <label for="soundToggle" class="linkish" title="Enable alarm">Sound</label>
-    <button id="testSoundBtn" title="Play test chime">Test</button>
+    <button id="testSoundBtn" type="button" title="Play test chime">Test</button>
   </div>
 </header>
 
@@ -81,9 +79,9 @@
         <div class="kicker">Set each task’s <b>Target (min)</b> in ⚙️ Configure. Start/Stop timer to auto-fill minutes (percent syncs).</div>
       </div>
       <div class="row">
-        <button id="stopAllBtn" title="Stop all running timers">Stop All</button>
-        <button id="silenceAllBtn" title="Silence all alarms">Silence</button>
-        <button id="clearInputsBtn" title="Clear inputs">Clear</button>
+        <button id="stopAllBtn" type="button" title="Stop all running timers">Stop All</button>
+        <button id="silenceAllBtn" type="button" title="Silence all alarms">Silence</button>
+        <button id="clearInputsBtn" type="button" title="Clear inputs">Clear</button>
       </div>
     </div>
 
@@ -98,8 +96,8 @@
         </div>
       </div>
       <div class="row">
-        <button id="saveBtn" class="primary">Save Day</button>
-        <button id="deleteBtn" title="Clear this day">Delete</button>
+        <button id="saveBtn" class="primary" type="button">Save Day</button>
+        <button id="deleteBtn" type="button" title="Clear this day">Delete</button>
       </div>
     </div>
 
@@ -116,15 +114,15 @@
       <div class="row muted" style="gap:16px;margin:6px 0 4px 0;"><span style="width:100%;font-size:12px">Columns: Name | ID | Weight (0–1) | Target minutes</span></div>
       <div id="cfgTasks"></div>
       <div class="row">
-        <button id="addTaskBtn">+ Add Task</button>
-        <button id="resetTasksBtn" title="Restore default tasks">Reset Tasks</button>
+        <button id="addTaskBtn" type="button">+ Add Task</button>
+        <button id="resetTasksBtn" type="button" title="Restore default tasks">Reset Tasks</button>
       </div>
       <div class="sep"></div>
       <div class="row">
         <label>Bronze max %</label><input id="thBronze" type="number" min="0" max="100" value="59" />
         <label>Silver max %</label><input id="thSilver" type="number" min="0" max="100" value="84" />
         <label>Gold starts at</label><input id="thGold" type="number" min="0" max="100" value="85" />
-        <button id="saveCfgBtn">Save Config</button>
+        <button id="saveCfgBtn" type="button">Save Config</button>
       </div>
     </details>
   </section>
@@ -133,9 +131,9 @@
   <section class="card">
     <div class="row" style="justify-content:space-between">
       <div class="row">
-        <button id="prevMonth">◀</button>
+        <button id="prevMonth" type="button">◀</button>
         <div id="monthTitle" style="font-weight:700"></div>
-        <button id="nextMonth">▶</button>
+        <button id="nextMonth" type="button">▶</button>
       </div>
       <div class="row">
         <div class="pill"><span>🥉</span><b id="cBronze">0</b></div>
@@ -175,18 +173,18 @@
         <div class="big" id="formStageBig">👶 Toddler</div>
         <div id="formTrack" class="track" style="margin:6px 0 8px 0;"></div>
         <div class="row">
-          <button id="formUpdateBtn" title="Process months up to the one you are viewing">Update Form</button>
-          <button id="formResetBtn"  title="Reset to Toddler">Reset</button>
+          <button id="formUpdateBtn" type="button" title="Process months up to the one you are viewing">Update Form</button>
+          <button id="formResetBtn" type="button"  title="Reset to Toddler">Reset</button>
         </div>
         <div class="muted" id="formExplain" style="margin-top:6px;font-size:12px;"></div>
       </div>
 
-      <!-- NEW: CouchDB Sync card -->
+      <!-- CouchDB Sync card -->
       <div class="card">
         <div class="stat">CouchDB Sync</div>
         <div class="tabs">
-          <button id="tabSync" class="active">Sync</button>
-          <button id="tabPull">Pull</button>
+          <button id="tabSync" class="active" type="button">Sync</button>
+          <button id="tabPull" type="button">Pull</button>
         </div>
 
         <div id="paneSync" class="tabp active">
@@ -197,9 +195,9 @@
             <input id="couchDb" class="mono" style="min-width:130px" value="record"/>
           </div>
           <div class="row" style="margin-top:6px">
-            <button id="liveToggle">Live Sync: Off</button>
-            <button id="pushNow">Push Now ⬆️</button>
-            <button id="pullNow">Pull Now ⬇️</button>
+            <button id="liveToggle" type="button">Live Sync: Off</button>
+            <button id="pushNow" type="button">Push Now ⬆️</button>
+            <button id="pullNow" type="button">Pull Now ⬇️</button>
           </div>
           <div class="muted mono" id="syncStatus" style="margin-top:6px">Idle.</div>
         </div>
@@ -209,8 +207,8 @@
             Use this if you cleared browser data or moved to a new device. It will pull from CouchDB and restore everything.
           </div>
           <div class="row">
-            <button id="pullRestore" class="primary">Pull & Restore All</button>
-            <button id="clearLocal">Clear Local (localStorage + IndexedDB)</button>
+            <button id="pullRestore" class="primary" type="button">Pull & Restore All</button>
+            <button id="clearLocal" type="button">Clear Local (localStorage + IndexedDB)</button>
           </div>
           <div class="muted" id="pullMsg" style="margin-top:6px"></div>
         </div>
@@ -321,7 +319,7 @@ const yearTitle=$("#yearTitle"), yearCoin=$("#yearCoin"), yearExplain=$("#yearEx
   if (!datePick.value)  datePick.value  = ymd(today);
   if (!monthPick.value) monthPick.value = ym(today);
   renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); renderFormCard(); renderYearCard(); ensureTick();
-  pouchInit(); // ← NEW
+  pouchInit();
 })();
 
 /* ================== TIMERS + ALARMS ================== */
@@ -341,7 +339,10 @@ function startTimer(dayKey, taskId){
 }
 function stopTimer(dayKey, taskId){
   const st=getDayTimers(dayKey)[taskId];
-  if (st && st.running){ st.sec += Math.floor((Date.now()-st.start)/1000); st.running=false; st.start=null; saveTimers(); updateTimerUI(); syncMinutesFromTimers(); checkAlarms(dayKey); rerunAuto(); }
+  if (st && st.running){
+    st.sec += Math.floor((Date.now()-st.start)/1000);
+    st.running=false; st.start=null; saveTimers(); updateTimerUI(); syncMinutesFromTimers(); checkAlarms(dayKey); rerunAuto();
+  }
 }
 function stopAll(dayKey){
   const timers=getDayTimers(dayKey); let changed=false;
@@ -501,7 +502,7 @@ function renderTasksForDay(){
     row.innerHTML=`
       <span>${t.name} <span class="muted">(${fmt2(t.weight*100)}%) • target ${t.target||0}m</span></span>
       <div class="timechip" id="time-${t.id}">00:00:00</div>
-      <button id="btn-${t.id}" data-task="${t.id}">Start</button>
+      <button id="btn-${t.id}" data-task="${t.id}" type="button">Start</button>
       <input type="number" min="0" value="${minsVal}" data-task="${t.id}" data-kind="mins" placeholder="min" />
       <input type="number" min="0" max="100" value="${percVal}" data-task="${t.id}" data-kind="perc" placeholder="%" />
     `;
@@ -510,15 +511,35 @@ function renderTasksForDay(){
 
   taskList.querySelectorAll("input").forEach(inp=> inp.addEventListener("input",(e)=>onTaskInput(e.target)));
 
+  // Defensive toggle for Start/Stop
   taskList.querySelectorAll("button[id^='btn-']").forEach(btn=>{
-    btn.addEventListener("click", ()=>{
+    btn.addEventListener("click", (ev)=>{
+      ev.preventDefault(); ev.stopPropagation();
       primeAudioOnce();
       const dayKey = datePick.value;
       const id = btn.dataset.task;
-      const st = getDayTimers(dayKey)[id];
-      if (st.ringing) { stopAlarm(dayKey, id, true); return; }
-      if (st.running) stopTimer(dayKey, id);
-      else startTimer(dayKey, id);
+      const timers = getDayTimers(dayKey);
+      const st = timers[id];
+      if (!st) return;
+
+      if (st.ringing) { // stop ringing
+        stopAlarm(dayKey, id, true);
+        return;
+      }
+
+      if (st.running) {
+        const now = Date.now();
+        st.sec += Math.max(0, Math.floor((now - (st.start || now))/1000));
+        st.running = false;
+        st.start = null;
+        saveTimers();
+        updateTimerUI();
+        syncMinutesFromTimers(true);
+        checkAlarms(dayKey);
+        rerunAuto();
+      } else {
+        startTimer(dayKey, id);
+      }
     });
   });
 
@@ -616,310 +637,4 @@ function renderCalendar(){
   if (s===maxCount) winners.push("silver");
   if (g===maxCount) winners.push("gold");
   if (winners.length===1){ monthResult=winners[0]; explain="Dominant coin by count."; }
-  else { if (avg>=2.5) monthResult="gold"; else if (avg>=1.75) monthResult="silver"; else monthResult="bronze"; explain="Tie → resolved by average points."; }
-  monthCoin.textContent = n ? EMOJI[monthResult] : "–";
-  monthExplain.textContent = n ? explain : "No data this month.";
-
-  renderYearCard();
-}
-
-/* ================== BUTTONS ================== */
-saveBtn.addEventListener("click", ()=>{
-  const key=datePick.value; if (!key) return;
-  stopAll(key);
-  const { perc, mins }=gatherTaskData();
-  const eff=weightedEfficiency(perc); const coin=coinForEff(eff);
-  store.days[key]={ eff, coin, note:note.value, tasks:perc, mins:mins }; saveStore(); renderCalendar(); renderYearCard();
-});
-delBtn.addEventListener("click", ()=>{
-  const key=datePick.value; stopAll(key); silenceAll(key);
-  delete store.days[key]; delete tstore.days[key]; saveStore(); saveTimers();
-  renderTasksForDay(); rerunAuto(); renderCalendar(); renderYearCard();
-});
-clearInputsBtn.addEventListener("click", ()=>{
-  taskList.querySelectorAll("input").forEach(inp=> inp.value="");
-  const timers=getDayTimers(datePick.value);
-  for (const st of Object.values(timers)){ st.sec=0; st.running=false; st.start=null; st.fired=false; st.ringing=false; }
-  silenceAll(datePick.value); saveTimers(); updateTimerUI(); rerunAuto();
-});
-stopAllBtn.addEventListener("click", ()=>{ primeAudioOnce(); stopAll(datePick.value); });
-silenceAllBtn.addEventListener("click", ()=>{ primeAudioOnce(); silenceAll(datePick.value); });
-
-addTaskBtn.addEventListener("click", ()=>{ const newid="task"+Math.random().toString(36).slice(2,7); cfg.tasks.push({id:newid,name:"New Task",weight:0.1,target:30}); renderCfg(); });
-resetTasksBtn.addEventListener("click", ()=>{
-  if (!confirm('Restore the default tasks?')) return;
-  cfg.tasks = JSON.parse(JSON.stringify(DEFAULT_TASKS));
-  saveCfg(); renderCfg(); renderTasksForDay();
-});
-saveCfgBtn.addEventListener("click", ()=>{
-  const b=+thBronze.value, s=+thSilver.value, g=+thGold.value;
-  cfg.thresholds={ BRONZE_MAX:clamp(b,0,98), SILVER_MAX:clamp(s,Math.max(b+1,1),99), GOLD_MIN:clamp(g,Math.max(s+1,2),100) };
-  cfg.tasks=normalizeWeights(cfg.tasks); saveCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); renderYearCard();
-});
-
-formUpdateBtn.addEventListener("click", ()=> evaluateForm(monthPick.value));
-formResetBtn.addEventListener("click", ()=>{ if (!confirm("Reset form back to 👶 Toddler?")) return; form={stage:0,evaluatedThrough:null}; saveForm(); renderFormCard(); });
-
-prevMonthBtn.addEventListener("click", ()=>{ const {Y,M}=monthMeta(monthPick.value); const prev=new Date(Y,M-2,1); monthPick.value=ym(prev); renderCalendar(); });
-nextMonthBtn.addEventListener("click", ()=>{ const {Y,M}=monthMeta(monthPick.value); const next=new Date(Y,M,1); monthPick.value=ym(next); renderCalendar(); });
-monthPick.addEventListener("input", ()=>{ renderCalendar(); renderYearCard(); });
-datePick.addEventListener("input", ()=>{ silenceAllAcrossDays(); renderTasksForDay(); rerunAuto(); resetTick(); checkAlarms(datePick.value); });
-
-/* ================== CONFIG UI RENDER ================== */
-function renderCfg(){
-  thBronze.value=cfg.thresholds.BRONZE_MAX; thSilver.value=cfg.thresholds.SILVER_MAX; thGold.value=cfg.thresholdS?.GOLD_MIN ?? cfg.thresholds.GOLD_MIN; // tolerate import older keys
-  cfgTasks.innerHTML="";
-  for (const t of cfg.tasks){
-    const row=document.createElement("div"); row.className="taskcfgrow";
-    row.innerHTML=`<input type="text" value="${t.name}" data-id="${t.id}" data-k="name" />
-      <input type="text" value="${t.id}" data-id="${t.id}" data-k="id" />
-      <input type="number" step="0.05" value="${+t.weight||0}" data-id="${t.id}" data-k="weight" />
-      <input type="number" step="5" value="${+t.target||0}" data-id="${t.id}" data-k="target" />`;
-    cfgTasks.appendChild(row);
-  }
-  cfgTasks.querySelectorAll("input").forEach(inp=>{
-    inp.addEventListener("input",(e)=>{
-      const id=e.target.dataset.id, k=e.target.dataset.k, v=e.target.value;
-      const idx=cfg.tasks.findIndex(x=>x.id===id); if (idx<0) return;
-      if (k==="weight") cfg.tasks[idx][k]=+v;
-      else if (k==="target") cfg.tasks[idx][k]=Math.max(0,+v|0);
-      else cfg.tasks[idx][k]=v;
-    });
-  });
-}
-
-/* ================== IMPORT / EXPORT ================== */
-exportBtn.addEventListener("click", ()=>{
-  stopAll(datePick.value);
-  const payload={ cfg, store, timers:tstore, form };
-  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
-  const url=URL.createObjectURL(blob);
-  const a=document.createElement("a"); a.href=url; a.download="daily-coins-backup.json"; a.click(); URL.revokeObjectURL(url);
-});
-document.querySelector("label input#importFile").addEventListener("change",(e)=>{
-  const f=e.target.files?.[0]; if(!f) return;
-  const r=new FileReader(); r.onload=()=>{ try{
-    const data=JSON.parse(r.result);
-    if (data.cfg)
-      cfg = {
-        thresholds: DEFAULT_THRESHOLDS,
-        tasks: DEFAULT_TASKS,
-        ...data.cfg,
-        tasks: (data.cfg.tasks && data.cfg.tasks.length ? data.cfg.tasks : DEFAULT_TASKS)
-                 .map(t => ({ target:60, ...t }))
-      };
-    if (data.store)  store=data.store;
-    if (data.timers) tstore=data.timers;
-    if (data.form)   form=data.form;
-    saveCfg(); saveStore(); saveTimers(); saveForm();
-    renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); renderYearCard(); updateTimerUI(); renderFormCard(); checkAlarms(datePick.value);
-    alert("Imported successfully.");
-  }catch(err){ alert("Invalid JSON file."); } }; r.readAsText(f);
-});
-
-/* ================== LOAD/SAVE (robust) ================== */
-function loadCfg(){
-  const raw = localStorage.getItem(SKCFG);
-  if (raw){
-    try{
-      const obj = JSON.parse(raw) || {};
-      let tasks = Array.isArray(obj.tasks) && obj.tasks.length ? obj.tasks : DEFAULT_TASKS;
-      tasks = tasks.map(t => ({ target:60, ...t }));
-      const thresholds = { ...DEFAULT_THRESHOLDS, ...(obj.thresholds||{}) };
-      const sanitized = { tasks, thresholds };
-      localStorage.setItem(SKCFG, JSON.stringify(sanitized));
-      return sanitized;
-    }catch(e){}
-  }
-  const seeded = { tasks: DEFAULT_TASKS, thresholds: DEFAULT_THRESHOLDS };
-  localStorage.setItem(SKCFG, JSON.stringify(seeded));
-  return seeded;
-}
-function saveCfg(){ localStorage.setItem(SKCFG, JSON.stringify(cfg)); schedulePouchSave(); }
-
-function loadStore(){ const s = localStorage.getItem(SKEY); if (s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKEY,JSON.stringify(seeded)); return seeded; }
-function saveStore(){ localStorage.setItem(SKEY, JSON.stringify(store)); schedulePouchSave(); }
-
-function loadTimers(){ const s = localStorage.getItem(SKTMR); if (s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKTMR, JSON.stringify(seeded)); return seeded; }
-function saveTimers(){ localStorage.setItem(SKTMR, JSON.stringify(tstore)); schedulePouchSave(); }
-
-function loadForm(){ const s = localStorage.getItem(SKFORM); if (s) return JSON.parse(s); const seeded={stage:0, evaluatedThrough:null}; localStorage.setItem(SKFORM, JSON.stringify(seeded)); return seeded; }
-function saveForm(){ localStorage.setItem(SKFORM, JSON.stringify(form)); schedulePouchSave(); }
-
-/* ================== POUCHDB SYNC ================== */
-const POUCH_LOCAL_NAME = 'daily-coins';
-const APP_DOC_ID = 'app_state_v1';
-
-let pdb = null;
-let appDocRev = null;
-let liveSync = null;
-
-const couch = {
-  host: localStorage.getItem('couch.host') || 'https://couch.techstudy.me',
-  db:   localStorage.getItem('couch.db')   || 'record'
-};
-
-const couchHostInp = $("#couchHost");
-const couchDbInp = $("#couchDb");
-const liveToggleBtn = $("#liveToggle");
-const pushNowBtn = $("#pushNow");
-const pullNowBtn = $("#pullNow");
-const syncStatus = $("#syncStatus");
-const tabSync = $("#tabSync"), tabPull = $("#tabPull");
-const paneSync = $("#paneSync"), panePull = $("#panePull");
-const pullRestoreBtn = $("#pullRestore"), clearLocalBtn = $("#clearLocal");
-const pullMsg = $("#pullMsg");
-
-function remoteURL(){ return `${(couch.host||'').replace(/\/$/,'')}/${encodeURIComponent(couch.db||'')}`; }
-
-function setStatus(msg){ if (syncStatus) syncStatus.textContent = msg; }
-function setPullMsg(msg){ if (pullMsg) pullMsg.textContent = msg; }
-
-function pouchInit(){
-  try{
-    pdb = new PouchDB(POUCH_LOCAL_NAME);
-  }catch(e){
-    setStatus('PouchDB init failed (IndexedDB blocked?)');
-    return;
-  }
-  // Prefill inputs
-  if (couchHostInp) couchHostInp.value = couch.host;
-  if (couchDbInp)   couchDbInp.value   = couch.db;
-
-  // Changes feed: keep UI in sync if app doc changes (from remote or another tab)
-  pdb.changes({ live:true, since:'now', include_docs:true, doc_ids:[APP_DOC_ID] })
-    .on('change', (c)=>{ if (c.doc) applyFromDoc(c.doc, /*render=*/true); })
-    .on('error', ()=>{});
-
-  // If no local data, try pulling from remote once
-  const noLocal = !localStorage.getItem(SKEY) && !localStorage.getItem(SKCFG) && !localStorage.getItem(SKTMR) && !localStorage.getItem(SKFORM);
-  if (noLocal){
-    setStatus('No local data → trying initial pull…');
-    pouchPull().then(()=> pdb.get(APP_DOC_ID).then(d=>applyFromDoc(d,true)).catch(()=>setStatus('No remote state yet.')))
-               .catch(()=> setStatus('Initial pull failed (check CORS/DB).'));
-  }
-
-  // Small tabs
-  function activateTab(which){
-    if (which==='pull'){ tabPull.classList.add('active'); tabSync.classList.remove('active'); panePull.classList.add('active'); paneSync.classList.remove('active'); }
-    else { tabSync.classList.add('active'); tabPull.classList.remove('active'); paneSync.classList.add('active'); panePull.classList.remove('active'); }
-  }
-  tabSync?.addEventListener('click', ()=>activateTab('sync'));
-  tabPull?.addEventListener('click', ()=>activateTab('pull'));
-  activateTab('sync');
-
-  // Inputs
-  couchHostInp?.addEventListener('input', ()=>{ couch.host=couchHostInp.value.trim(); localStorage.setItem('couch.host', couch.host); if (liveSync) restartLiveSync(); });
-  couchDbInp?.addEventListener('input',   ()=>{ couch.db=couchDbInp.value.trim();     localStorage.setItem('couch.db',   couch.db);   if (liveSync) restartLiveSync(); });
-
-  liveToggleBtn?.addEventListener('click', ()=>{
-    if (liveSync){ stopLiveSync(); }
-    else { startLiveSync(); }
-  });
-  pushNowBtn?.addEventListener('click', async ()=>{
-    await writeAppDoc(); // ensure latest local saved
-    setStatus('Pushing…');
-    pouchPush().then(()=> setStatus('Push complete.')).catch(()=> setStatus('Push failed.'));
-  });
-  pullNowBtn?.addEventListener('click', async ()=>{
-    setStatus('Pulling…');
-    pouchPull().then(async ()=>{
-      setStatus('Pulled. Applying…');
-      try { const d = await pdb.get(APP_DOC_ID); applyFromDoc(d,true); setStatus('Applied.'); } catch{ setStatus('No remote state to apply.'); }
-    }).catch(()=> setStatus('Pull failed.'));
-  });
-
-  pullRestoreBtn?.addEventListener('click', async ()=>{
-    setPullMsg('Restoring… (pulling from remote)');
-    try{
-      await clearLocalOnly();
-      await pouchPull();
-      const d = await pdb.get(APP_DOC_ID);
-      applyFromDoc(d,true);
-      setPullMsg('Restore complete ✅');
-    }catch(e){ setPullMsg('Restore failed. Check host/DB/CORS.'); }
-  });
-  clearLocalBtn?.addEventListener('click', async ()=>{
-    await clearLocalOnly();
-    setPullMsg('Local cleared. Now press “Pull & Restore All”.');
-  });
-}
-
-function remoteDB(){ // open lazily each time to pick updated host/db
-  return new PouchDB(remoteURL(), { skip_setup:true }); // expects DB already created & CORS enabled
-}
-function startLiveSync(){
-  if (liveSync) return;
-  setStatus('Starting live sync…');
-  liveSync = PouchDB.sync(pdb, remoteDB(), { live:true, retry:true })
-    .on('change', info => setStatus('Live: change'))
-    .on('paused', err => setStatus(err ? 'Live: paused (err)' : 'Live: paused'))
-    .on('active', ()=> setStatus('Live: active'))
-    .on('error', err => setStatus('Live error (check CORS/auth)'));
-  liveToggleBtn.textContent = 'Live Sync: On';
-}
-function stopLiveSync(){
-  if (!liveSync) return;
-  liveSync.cancel();
-  liveSync = null;
-  setStatus('Live sync stopped.');
-  liveToggleBtn.textContent = 'Live Sync: Off';
-}
-function restartLiveSync(){ stopLiveSync(); startLiveSync(); }
-
-async function writeAppDoc(){
-  if (!pdb) return;
-  const doc = { _id: APP_DOC_ID, updatedAt: new Date().toISOString(), cfg, store, tstore, form };
-  try{
-    if (!appDocRev){
-      try{ const cur = await pdb.get(APP_DOC_ID); appDocRev = cur._rev; }catch{}
-    }
-    if (appDocRev) doc._rev = appDocRev;
-    const res = await pdb.put(doc);
-    appDocRev = res.rev;
-  }catch(e){
-    if (e.status === 409){
-      const latest = await pdb.get(APP_DOC_ID);
-      doc._rev = latest._rev;
-      const res2 = await pdb.put(doc);
-      appDocRev = res2.rev;
-    } else {
-      // non-fatal
-    }
-  }
-}
-const schedulePouchSave = debounce(writeAppDoc, 600);
-
-async function applyFromDoc(doc, render=false){
-  if (!doc) return;
-  appDocRev = doc._rev || appDocRev;
-  if (doc.cfg)   { cfg = doc.cfg;   saveCfg(); }
-  if (doc.store) { store = doc.store; saveStore(); }
-  if (doc.tstore){ tstore = doc.tstore; saveTimers(); }
-  if (doc.form)  { form = doc.form; saveForm(); }
-  if (render){ renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); renderYearCard(); updateTimerUI(); renderFormCard(); checkAlarms(datePick.value); }
-}
-
-function pouchPush(){ return pdb.replicate.to(remoteDB()); }
-function pouchPull(){ return pdb.replicate.from(remoteDB()); }
-
-async function clearLocalOnly(){
-  // clear localStorage keys
-  localStorage.removeItem(SKEY);
-  localStorage.removeItem(SKCFG);
-  localStorage.removeItem(SKTMR);
-  localStorage.removeItem(SKFORM);
-  // reset in-memory
-  cfg = { tasks: DEFAULT_TASKS.map(t=>({...t})), thresholds: DEFAULT_THRESHOLDS };
-  store = { days:{} };
-  tstore = { days:{} };
-  form = { stage:0, evaluatedThrough:null };
-  // wipe local Pouch
-  if (pdb){ try{ await pdb.destroy(); }catch{}; pdb = new PouchDB(POUCH_LOCAL_NAME); appDocRev=null; }
-  renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); renderFormCard(); renderYearCard();
-}
-
-/* ========= END POUCH ========= */
-</script>
-</body>
-</html>
+  else { if (avg>=2.5) monthResult="gold"; else if (avg
