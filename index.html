@@ -23,11 +23,13 @@
   .day .dnum { font-size:12px; color:var(--muted); }
   .coin { font-size:22px; text-align:right; }
   .ghost { opacity:.35 }
+  /* responsive summary grid */
   .summary { display:grid; gap:8px; grid-template-columns:repeat(auto-fit, minmax(220px, 1fr)); margin-top:8px; }
   .pill { background:#12162a; border:1px solid #2a3052; border-radius:999px; padding:10px 12px; display:flex; align-items:center; justify-content:center; gap:8px; }
   .stat { font-size:13px; color:var(--muted); }
   .big { font-size:28px; font-weight:700; }
   .muted { color:var(--muted); }
+  /* Task row: name | timer | start/stop | minutes | percent */
   .taskrow { display:grid; grid-template-columns:1fr 88px 90px 86px 72px; gap:8px; align-items:center; margin-bottom:6px; min-width:620px; }
   .taskrow span { font-size:13px; }
   .timechip { font-variant-numeric:tabular-nums; text-align:center; padding:6px 8px; border:1px solid #2a3052; border-radius:8px; background:#12162a; min-width:84px; }
@@ -39,26 +41,27 @@
   .right { text-align:right; }
   .hidden { display:none !important; }
   .taskcfgrow { display:grid; grid-template-columns:1fr 140px 90px 120px; gap:8px; align-items:center; margin-bottom:6px; }
-  .tabs { display:flex; gap:6px; margin-bottom:6px; }
-  .tabs button { background:#0f1430; border:1px solid #2a3052; }
-  .tabs button.active { outline:2px solid #2f67ff; }
-  .tabp { display:none; }
-  .tabp.active { display:block; }
-  .mono { font-family: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,"Liberation Mono","Courier New",monospace; }
+
+  /* Form track */
+  .track { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .step { display:flex; align-items:center; gap:6px; }
+  .bubble { width:28px; height:28px; border-radius:50%; border:1px solid #2a3052; display:flex; align-items:center; justify-content:center; font-size:16px; }
+  .bubble.active { border-color:#7bd88f; box-shadow:0 0 0 2px rgba(123,216,143,.15) inset; }
+  .step label { font-size:12px; color:var(--muted); }
 </style>
 </head>
 <body>
 <header>
   <h1>Daily Coins</h1>
   <div class="row">
-    <button id="exportBtn" type="button">Export JSON</button>
+    <button id="exportBtn">Export JSON</button>
     <label class="linkish">
       Import JSON
       <input id="importFile" type="file" accept="application/json" class="hidden" />
     </label>
     <input id="soundToggle" type="checkbox" />
     <label for="soundToggle" class="linkish" title="Enable alarm">Sound</label>
-    <button id="testSoundBtn" type="button" title="Play test chime">Test</button>
+    <button id="testSoundBtn" title="Play test chime">Test</button>
   </div>
 </header>
 
@@ -79,9 +82,9 @@
         <div class="kicker">Set each task’s <b>Target (min)</b> in ⚙️ Configure. Start/Stop timer to auto-fill minutes (percent syncs).</div>
       </div>
       <div class="row">
-        <button id="stopAllBtn" type="button" title="Stop all running timers">Stop All</button>
-        <button id="silenceAllBtn" type="button" title="Silence all alarms">Silence</button>
-        <button id="clearInputsBtn" type="button" title="Clear inputs">Clear</button>
+        <button id="stopAllBtn" title="Stop all running timers">Stop All</button>
+        <button id="silenceAllBtn" title="Silence all alarms">Silence</button>
+        <button id="clearInputsBtn" title="Clear inputs">Clear</button>
       </div>
     </div>
 
@@ -96,8 +99,8 @@
         </div>
       </div>
       <div class="row">
-        <button id="saveBtn" class="primary" type="button">Save Day</button>
-        <button id="deleteBtn" type="button" title="Clear this day">Delete</button>
+        <button id="saveBtn" class="primary">Save Day</button>
+        <button id="deleteBtn" title="Clear this day">Delete</button>
       </div>
     </div>
 
@@ -114,26 +117,26 @@
       <div class="row muted" style="gap:16px;margin:6px 0 4px 0;"><span style="width:100%;font-size:12px">Columns: Name | ID | Weight (0–1) | Target minutes</span></div>
       <div id="cfgTasks"></div>
       <div class="row">
-        <button id="addTaskBtn" type="button">+ Add Task</button>
-        <button id="resetTasksBtn" type="button" title="Restore default tasks">Reset Tasks</button>
+        <button id="addTaskBtn">+ Add Task</button>
+        <button id="resetTasksBtn" title="Restore default tasks">Reset Tasks</button>
       </div>
       <div class="sep"></div>
       <div class="row">
         <label>Bronze max %</label><input id="thBronze" type="number" min="0" max="100" value="59" />
         <label>Silver max %</label><input id="thSilver" type="number" min="0" max="100" value="84" />
         <label>Gold starts at</label><input id="thGold" type="number" min="0" max="100" value="85" />
-        <button id="saveCfgBtn" type="button">Save Config</button>
+        <button id="saveCfgBtn">Save Config</button>
       </div>
     </details>
   </section>
 
-  <!-- Right: Month + summary (with Form + Year + Sync) -->
+  <!-- Right: Month + summary (with Form + Year) -->
   <section class="card">
     <div class="row" style="justify-content:space-between">
       <div class="row">
-        <button id="prevMonth" type="button">◀</button>
+        <button id="prevMonth">◀</button>
         <div id="monthTitle" style="font-weight:700"></div>
-        <button id="nextMonth" type="button">▶</button>
+        <button id="nextMonth">▶</button>
       </div>
       <div class="row">
         <div class="pill"><span>🥉</span><b id="cBronze">0</b></div>
@@ -162,56 +165,23 @@
         <div class="muted" id="monthExplain"></div>
       </div>
 
+      <!-- NEW: Overall Year -->
       <div class="card center">
         <div class="stat">Overall Year (<span id="yearTitle"></span>)</div>
         <div class="big" id="yearCoin">–</div>
         <div class="muted" id="yearExplain"></div>
       </div>
 
+      <!-- Form card -->
       <div class="card" id="formCard">
         <div class="stat">Form Stage</div>
         <div class="big" id="formStageBig">👶 Toddler</div>
         <div id="formTrack" class="track" style="margin:6px 0 8px 0;"></div>
         <div class="row">
-          <button id="formUpdateBtn" type="button" title="Process months up to the one you are viewing">Update Form</button>
-          <button id="formResetBtn" type="button"  title="Reset to Toddler">Reset</button>
+          <button id="formUpdateBtn" title="Process months up to the one you are viewing">Update Form</button>
+          <button id="formResetBtn"  title="Reset to Toddler">Reset</button>
         </div>
         <div class="muted" id="formExplain" style="margin-top:6px;font-size:12px;"></div>
-      </div>
-
-      <!-- CouchDB Sync card -->
-      <div class="card">
-        <div class="stat">CouchDB Sync</div>
-        <div class="tabs">
-          <button id="tabSync" class="active" type="button">Sync</button>
-          <button id="tabPull" type="button">Pull</button>
-        </div>
-
-        <div id="paneSync" class="tabp active">
-          <div class="row">
-            <label>Host</label>
-            <input id="couchHost" class="mono" style="min-width:260px" value="https://couch.techstudy.me"/>
-            <label>DB</label>
-            <input id="couchDb" class="mono" style="min-width:130px" value="record"/>
-          </div>
-          <div class="row" style="margin-top:6px">
-            <button id="liveToggle" type="button">Live Sync: Off</button>
-            <button id="pushNow" type="button">Push Now ⬆️</button>
-            <button id="pullNow" type="button">Pull Now ⬇️</button>
-          </div>
-          <div class="muted mono" id="syncStatus" style="margin-top:6px">Idle.</div>
-        </div>
-
-        <div id="panePull" class="tabp">
-          <div class="muted" style="margin-bottom:6px">
-            Use this if you cleared browser data or moved to a new device. It will pull from CouchDB and restore everything.
-          </div>
-          <div class="row">
-            <button id="pullRestore" class="primary" type="button">Pull & Restore All</button>
-            <button id="clearLocal" type="button">Clear Local (localStorage + IndexedDB)</button>
-          </div>
-          <div class="muted" id="pullMsg" style="margin-top:6px"></div>
-        </div>
       </div>
     </div>
   </section>
@@ -221,9 +191,6 @@
   <div>Tip: tap a day in the calendar to edit; export regularly for backup.</div>
   <div class="right">Made for 🥉/🥈/🥇 habit tracking</div>
 </footer>
-
-<!-- PouchDB -->
-<script src="https://cdn.jsdelivr.net/npm/pouchdb@7.3.1/dist/pouchdb.min.js"></script>
 
 <script>
 /* ================== CONFIG ================== */
@@ -282,6 +249,35 @@ function playChime(){
   if (navigator.vibrate) navigator.vibrate(250);
 }
 
+/* ================== LOAD/SAVE (robust) ================== */
+function loadCfg(){
+  const raw = localStorage.getItem(SKCFG);
+  if (raw){
+    try{
+      const obj = JSON.parse(raw) || {};
+      let tasks = Array.isArray(obj.tasks) && obj.tasks.length ? obj.tasks : DEFAULT_TASKS;
+      tasks = tasks.map(t => ({ target:60, ...t }));
+      const thresholds = { ...DEFAULT_THRESHOLDS, ...(obj.thresholds||{}) };
+      const sanitized = { tasks, thresholds };
+      localStorage.setItem(SKCFG, JSON.stringify(sanitized));
+      return sanitized;
+    }catch(e){}
+  }
+  const seeded = { tasks: DEFAULT_TASKS, thresholds: DEFAULT_THRESHOLDS };
+  localStorage.setItem(SKCFG, JSON.stringify(seeded));
+  return seeded;
+}
+function saveCfg(){ localStorage.setItem(SKCFG, JSON.stringify(cfg)); }
+
+function loadStore(){ const s = localStorage.getItem(SKEY); if (s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKEY,JSON.stringify(seeded)); return seeded; }
+function saveStore(){ localStorage.setItem(SKEY, JSON.stringify(store)); }
+
+function loadTimers(){ const s = localStorage.getItem(SKTMR); if (s) return JSON.parse(s); const seeded={days:{}}; localStorage.setItem(SKTMR, JSON.stringify(seeded)); return seeded; }
+function saveTimers(){ localStorage.setItem(SKTMR, JSON.stringify(tstore)); }
+
+function loadForm(){ const s = localStorage.getItem(SKFORM); if (s) return JSON.parse(s); const seeded={stage:0, evaluatedThrough:null}; localStorage.setItem(SKFORM, JSON.stringify(seeded)); return seeded; }
+function saveForm(){ localStorage.setItem(SKFORM, JSON.stringify(form)); }
+
 /* ================== HELPERS ================== */
 const $ = (q) => document.querySelector(q);
 const fmt2 = (n) => (Math.round(n*100)/100).toFixed(2);
@@ -293,7 +289,6 @@ function secsToHMS(s){ const h=Math.floor(s/3600), m=Math.floor((s%3600)/60), ss
 function normalizeWeights(tasks){ const sum=tasks.reduce((a,t)=>a+(+t.weight||0),0)||1; return tasks.map(t=>({...t,weight:(+t.weight||0)/sum})); }
 function coinForEff(eff){ const {BRONZE_MAX,SILVER_MAX,GOLD_MIN}=cfg.thresholds; if (eff>=GOLD_MIN) return "gold"; if (eff<=BRONZE_MAX) return "bronze"; return "silver"; }
 function weightedEfficiency(taskPercents){ const tasks=normalizeWeights(cfg.tasks); let acc=0; for (const t of tasks){ const p=clamp(+taskPercents[t.id]||0,0,100); acc += (p/100)*t.weight*100; } return clamp(acc,0,100); }
-function debounce(fn, ms){ let t; return function(...a){ clearTimeout(t); t=setTimeout(()=>fn.apply(this,a), ms); }; }
 
 /* ================== SOUND UI ================== */
 const soundToggle=$("#soundToggle"), testSoundBtn=$("#testSoundBtn");
@@ -319,11 +314,10 @@ const yearTitle=$("#yearTitle"), yearCoin=$("#yearCoin"), yearExplain=$("#yearEx
   if (!datePick.value)  datePick.value  = ymd(today);
   if (!monthPick.value) monthPick.value = ym(today);
   renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); renderFormCard(); renderYearCard(); ensureTick();
-  pouchInit();
 })();
 
 /* ================== TIMERS + ALARMS ================== */
-const ALARMS = {};
+const ALARMS = {}; // { dayKey: { taskId: intervalId } }
 function getDayTimers(dayKey){
   if (!tstore.days[dayKey]) tstore.days[dayKey]={};
   for (const t of cfg.tasks){
@@ -339,10 +333,7 @@ function startTimer(dayKey, taskId){
 }
 function stopTimer(dayKey, taskId){
   const st=getDayTimers(dayKey)[taskId];
-  if (st && st.running){
-    st.sec += Math.floor((Date.now()-st.start)/1000);
-    st.running=false; st.start=null; saveTimers(); updateTimerUI(); syncMinutesFromTimers(); checkAlarms(dayKey); rerunAuto();
-  }
+  if (st && st.running){ st.sec += Math.floor((Date.now()-st.start)/1000); st.running=false; st.start=null; saveTimers(); updateTimerUI(); syncMinutesFromTimers(); checkAlarms(dayKey); rerunAuto(); }
 }
 function stopAll(dayKey){
   const timers=getDayTimers(dayKey); let changed=false;
@@ -376,7 +367,7 @@ function checkAlarms(dayKey){
   }
 }
 
-/* ================== FORM ================== */
+/* ================== FORM (Toddler → Professional) ================== */
 function renderFormCard(){
   const stageLabel = `${FORM_EMOJI[form.stage]} ${FORM_STAGES[form.stage]}`;
   formStageBig.textContent = stageLabel;
@@ -455,23 +446,30 @@ function computeMonthSummary(ymStr){
   else { coin = avg>=2.5 ? "gold" : avg>=1.75 ? "silver" : "bronze"; explain="Tie → resolved by average points."; }
   return {b,s,g,nDays:n,avg,coin,explain};
 }
+
 function computeYearSummary(yearStr){
+  // month coin counts (based on monthly performance) + daily-weighted average points
   const monthCounts = { bronze:0, silver:0, gold:0 };
   let totalDays=0, totalPts=0;
+
   for (let m=1; m<=12; m++){
     const ymStr = `${yearStr}-${pad2(m)}`;
     const ms = computeMonthSummary(ymStr);
     if (ms.nDays>0){ monthCounts[ms.coin]++; totalDays += ms.nDays; totalPts += ms.avg * ms.nDays; }
   }
+
   if (totalDays===0) return { coin:null, explain:"No data this year." };
+
   const maxCount = Math.max(monthCounts.bronze, monthCounts.silver, monthCounts.gold);
   const winners=[]; if (monthCounts.bronze===maxCount) winners.push("bronze"); if (monthCounts.silver===maxCount) winners.push("silver"); if (monthCounts.gold===maxCount) winners.push("gold");
+
   const avgYear = totalPts / totalDays;
   let coin, explain;
   if (winners.length===1){ coin=winners[0]; explain="Dominant monthly coin by count."; }
   else { coin = avgYear>=2.5 ? "gold" : avgYear>=1.75 ? "silver" : "bronze"; explain="Tie → resolved by average points across the year."; }
   return { coin, explain };
 }
+
 function renderYearCard(){
   const year = (monthPick.value || ym(new Date())).slice(0,4);
   yearTitle.textContent = year;
@@ -502,7 +500,7 @@ function renderTasksForDay(){
     row.innerHTML=`
       <span>${t.name} <span class="muted">(${fmt2(t.weight*100)}%) • target ${t.target||0}m</span></span>
       <div class="timechip" id="time-${t.id}">00:00:00</div>
-      <button id="btn-${t.id}" data-task="${t.id}" type="button">Start</button>
+      <button id="btn-${t.id}" data-task="${t.id}">Start</button>
       <input type="number" min="0" value="${minsVal}" data-task="${t.id}" data-kind="mins" placeholder="min" />
       <input type="number" min="0" max="100" value="${percVal}" data-task="${t.id}" data-kind="perc" placeholder="%" />
     `;
@@ -511,35 +509,15 @@ function renderTasksForDay(){
 
   taskList.querySelectorAll("input").forEach(inp=> inp.addEventListener("input",(e)=>onTaskInput(e.target)));
 
-  // Defensive toggle for Start/Stop
   taskList.querySelectorAll("button[id^='btn-']").forEach(btn=>{
-    btn.addEventListener("click", (ev)=>{
-      ev.preventDefault(); ev.stopPropagation();
+    btn.addEventListener("click", ()=>{
       primeAudioOnce();
       const dayKey = datePick.value;
       const id = btn.dataset.task;
-      const timers = getDayTimers(dayKey);
-      const st = timers[id];
-      if (!st) return;
-
-      if (st.ringing) { // stop ringing
-        stopAlarm(dayKey, id, true);
-        return;
-      }
-
-      if (st.running) {
-        const now = Date.now();
-        st.sec += Math.max(0, Math.floor((now - (st.start || now))/1000));
-        st.running = false;
-        st.start = null;
-        saveTimers();
-        updateTimerUI();
-        syncMinutesFromTimers(true);
-        checkAlarms(dayKey);
-        rerunAuto();
-      } else {
-        startTimer(dayKey, id);
-      }
+      const st = getDayTimers(dayKey)[id];
+      if (st.ringing) { stopAlarm(dayKey, id, true); return; }
+      if (st.running) stopTimer(dayKey, id);
+      else startTimer(dayKey, id);
     });
   });
 
@@ -637,4 +615,106 @@ function renderCalendar(){
   if (s===maxCount) winners.push("silver");
   if (g===maxCount) winners.push("gold");
   if (winners.length===1){ monthResult=winners[0]; explain="Dominant coin by count."; }
-  else { if (avg>=2.5) monthResult="gold"; else if (avg
+  else { if (avg>=2.5) monthResult="gold"; else if (avg>=1.75) monthResult="silver"; else monthResult="bronze"; explain="Tie → resolved by average points."; }
+  monthCoin.textContent = n ? EMOJI[monthResult] : "–";
+  monthExplain.textContent = n ? explain : "No data this month.";
+
+  renderYearCard(); // update the year rollup for the selected month’s year
+}
+
+/* ================== BUTTONS ================== */
+saveBtn.addEventListener("click", ()=>{
+  const key=datePick.value; if (!key) return;
+  stopAll(key);
+  const { perc, mins }=gatherTaskData();
+  const eff=weightedEfficiency(perc); const coin=coinForEff(eff);
+  store.days[key]={ eff, coin, note:note.value, tasks:perc, mins:mins }; saveStore(); renderCalendar(); renderYearCard();
+});
+delBtn.addEventListener("click", ()=>{
+  const key=datePick.value; stopAll(key); silenceAll(key);
+  delete store.days[key]; delete tstore.days[key]; saveStore(); saveTimers();
+  renderTasksForDay(); rerunAuto(); renderCalendar(); renderYearCard();
+});
+clearInputsBtn.addEventListener("click", ()=>{
+  taskList.querySelectorAll("input").forEach(inp=> inp.value="");
+  const timers=getDayTimers(datePick.value);
+  for (const st of Object.values(timers)){ st.sec=0; st.running=false; st.start=null; st.fired=false; st.ringing=false; }
+  silenceAll(datePick.value); saveTimers(); updateTimerUI(); rerunAuto();
+});
+stopAllBtn.addEventListener("click", ()=>{ primeAudioOnce(); stopAll(datePick.value); });
+silenceAllBtn.addEventListener("click", ()=>{ primeAudioOnce(); silenceAll(datePick.value); });
+
+addTaskBtn.addEventListener("click", ()=>{ const newid="task"+Math.random().toString(36).slice(2,7); cfg.tasks.push({id:newid,name:"New Task",weight:0.1,target:30}); renderCfg(); });
+resetTasksBtn.addEventListener("click", ()=>{
+  if (!confirm('Restore the default tasks?')) return;
+  cfg.tasks = JSON.parse(JSON.stringify(DEFAULT_TASKS));
+  saveCfg(); renderCfg(); renderTasksForDay();
+});
+saveCfgBtn.addEventListener("click", ()=>{
+  const b=+thBronze.value, s=+thSilver.value, g=+thGold.value;
+  cfg.thresholds={ BRONZE_MAX:clamp(b,0,98), SILVER_MAX:clamp(s,Math.max(b+1,1),99), GOLD_MIN:clamp(g,Math.max(s+1,2),100) };
+  cfg.tasks=normalizeWeights(cfg.tasks); saveCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); renderYearCard();
+});
+
+formUpdateBtn.addEventListener("click", ()=> evaluateForm(monthPick.value));
+formResetBtn.addEventListener("click", ()=>{ if (!confirm("Reset form back to 👶 Toddler?")) return; form={stage:0,evaluatedThrough:null}; saveForm(); renderFormCard(); });
+
+prevMonthBtn.addEventListener("click", ()=>{ const {Y,M}=monthMeta(monthPick.value); const prev=new Date(Y,M-2,1); monthPick.value=ym(prev); renderCalendar(); });
+nextMonthBtn.addEventListener("click", ()=>{ const {Y,M}=monthMeta(monthPick.value); const next=new Date(Y,M,1); monthPick.value=ym(next); renderCalendar(); });
+monthPick.addEventListener("input", ()=>{ renderCalendar(); renderYearCard(); });
+datePick.addEventListener("input", ()=>{ silenceAllAcrossDays(); renderTasksForDay(); rerunAuto(); resetTick(); checkAlarms(datePick.value); });
+
+/* ================== CONFIG UI RENDER ================== */
+function renderCfg(){
+  thBronze.value=cfg.thresholds.BRONZE_MAX; thSilver.value=cfg.thresholds.SILVER_MAX; thGold.value=cfg.thresholds.GOLD_MIN;
+  cfgTasks.innerHTML="";
+  for (const t of cfg.tasks){
+    const row=document.createElement("div"); row.className="taskcfgrow";
+    row.innerHTML=`<input type="text" value="${t.name}" data-id="${t.id}" data-k="name" />
+      <input type="text" value="${t.id}" data-id="${t.id}" data-k="id" />
+      <input type="number" step="0.05" value="${+t.weight||0}" data-id="${t.id}" data-k="weight" />
+      <input type="number" step="5" value="${+t.target||0}" data-id="${t.id}" data-k="target" />`;
+    cfgTasks.appendChild(row);
+  }
+  cfgTasks.querySelectorAll("input").forEach(inp=>{
+    inp.addEventListener("input",(e)=>{
+      const id=e.target.dataset.id, k=e.target.dataset.k, v=e.target.value;
+      const idx=cfg.tasks.findIndex(x=>x.id===id); if (idx<0) return;
+      if (k==="weight") cfg.tasks[idx][k]=+v;
+      else if (k==="target") cfg.tasks[idx][k]=Math.max(0,+v|0);
+      else cfg.tasks[idx][k]=v;
+    });
+  });
+}
+
+/* ================== IMPORT / EXPORT ================== */
+exportBtn.addEventListener("click", ()=>{
+  stopAll(datePick.value);
+  const payload={ cfg, store, timers:tstore, form };
+  const blob=new Blob([JSON.stringify(payload,null,2)],{type:"application/json"});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement("a"); a.href=url; a.download="daily-coins-backup.json"; a.click(); URL.revokeObjectURL(url);
+});
+document.querySelector("label input#importFile").addEventListener("change",(e)=>{
+  const f=e.target.files?.[0]; if(!f) return;
+  const r=new FileReader(); r.onload=()=>{ try{
+    const data=JSON.parse(r.result);
+    if (data.cfg)
+      cfg = {
+        thresholds: DEFAULT_THRESHOLDS,
+        tasks: DEFAULT_TASKS,
+        ...data.cfg,
+        tasks: (data.cfg.tasks && data.cfg.tasks.length ? data.cfg.tasks : DEFAULT_TASKS)
+                 .map(t => ({ target:60, ...t }))
+      };
+    if (data.store)  store=data.store;
+    if (data.timers) tstore=data.timers;
+    if (data.form)   form=data.form;
+    saveCfg(); saveStore(); saveTimers(); saveForm();
+    renderCfg(); renderTasksForDay(); rerunAuto(); renderCalendar(); renderYearCard(); updateTimerUI(); renderFormCard(); checkAlarms(datePick.value);
+    alert("Imported successfully.");
+  }catch(err){ alert("Invalid JSON file."); } }; r.readAsText(f);
+});
+</script>
+</body>
+</html>
